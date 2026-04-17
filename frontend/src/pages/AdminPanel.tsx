@@ -5,6 +5,7 @@ export default function AdminPanel() {
   const [users, setUsers] = useState<any[]>([]);
   const [teams, setTeams] = useState<any[]>([]);
   const [newTeam, setNewTeam] = useState({ Team_Name: '', League: 'Majors', coachEmails: [] as string[] });
+  const [editingTeamId, setEditingTeamId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchData();
@@ -28,10 +29,25 @@ export default function AdminPanel() {
     fetchData();
   };
 
-  const createTeam = async () => {
-    await api.post('/api/teams', newTeam);
+  const createOrUpdateTeam = async () => {
+    if (editingTeamId) {
+      await api.put(`/api/teams/${editingTeamId}`, newTeam);
+    } else {
+      await api.post('/api/teams', newTeam);
+    }
     setNewTeam({ Team_Name: '', League: 'Majors', coachEmails: [] });
+    setEditingTeamId(null);
     fetchData();
+  };
+
+  const startEditTeam = (team: any) => {
+    setNewTeam({ Team_Name: team.Team_Name, League: team.League, coachEmails: team.coachEmails || [] });
+    setEditingTeamId(team.id);
+  };
+
+  const cancelEdit = () => {
+    setNewTeam({ Team_Name: '', League: 'Majors', coachEmails: [] });
+    setEditingTeamId(null);
   };
 
   const deleteTeam = async (id: string) => {
@@ -76,7 +92,8 @@ export default function AdminPanel() {
               <option value="Majors">Majors</option>
               <option value="Minors">Minors</option>
             </select>
-            <button className="btn" onClick={createTeam}>Add</button>
+            <button className="btn" onClick={createOrUpdateTeam}>{editingTeamId ? 'Update' : 'Add'}</button>
+            {editingTeamId && <button className="btn btn-danger" onClick={cancelEdit}>Cancel</button>}
           </div>
           
           <div style={{background: 'rgba(15, 23, 42, 0.8)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)'}}>
@@ -103,17 +120,49 @@ export default function AdminPanel() {
         </div>
 
         <div className="table-container">
+          <h3 style={{marginTop: '20px', marginBottom: '10px', color: 'var(--accent)'}}>Majors Teams</h3>
           <table>
             <thead><tr><th>Team</th><th>League</th><th>Coaches</th><th>Action</th></tr></thead>
             <tbody>
-              {teams?.map(t => (
+              {teams?.filter(t => t.League === 'Majors').sort((a, b) => a.Team_Name.localeCompare(b.Team_Name)).map(t => (
                 <tr key={t.id}>
                   <td>{t.Team_Name}</td>
                   <td>{t.League}</td>
                   <td>{t.coachEmails?.join(', ')}</td>
-                  <td><button className="btn btn-danger" onClick={() => deleteTeam(t.id)}>Delete</button></td>
+                  <td>
+                    <div style={{display:'flex', gap:'8px'}}>
+                      <button className="btn" style={{padding:'6px 12px', fontSize:'12px'}} onClick={() => startEditTeam(t)}>Edit</button>
+                      <button className="btn btn-danger" style={{padding:'6px 12px', fontSize:'12px'}} onClick={() => deleteTeam(t.id)}>Delete</button>
+                    </div>
+                  </td>
                 </tr>
               ))}
+              {(!teams || teams.filter(t => t.League === 'Majors').length === 0) && (
+                <tr><td colSpan={4} style={{textAlign: 'center', color: 'var(--text-secondary)'}}>No Majors teams found.</td></tr>
+              )}
+            </tbody>
+          </table>
+
+          <h3 style={{marginTop: '40px', marginBottom: '10px', color: 'var(--accent)'}}>Minors Teams</h3>
+          <table>
+            <thead><tr><th>Team</th><th>League</th><th>Coaches</th><th>Action</th></tr></thead>
+            <tbody>
+              {teams?.filter(t => t.League === 'Minors').sort((a, b) => a.Team_Name.localeCompare(b.Team_Name)).map(t => (
+                <tr key={t.id}>
+                  <td>{t.Team_Name}</td>
+                  <td>{t.League}</td>
+                  <td>{t.coachEmails?.join(', ')}</td>
+                  <td>
+                    <div style={{display:'flex', gap:'8px'}}>
+                      <button className="btn" style={{padding:'6px 12px', fontSize:'12px'}} onClick={() => startEditTeam(t)}>Edit</button>
+                      <button className="btn btn-danger" style={{padding:'6px 12px', fontSize:'12px'}} onClick={() => deleteTeam(t.id)}>Delete</button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {(!teams || teams.filter(t => t.League === 'Minors').length === 0) && (
+                <tr><td colSpan={4} style={{textAlign: 'center', color: 'var(--text-secondary)'}}>No Minors teams found.</td></tr>
+              )}
             </tbody>
           </table>
         </div>

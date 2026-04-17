@@ -90,6 +90,14 @@ def create_team(team_data: dict = Body(...), admin: dict = Depends(require_admin
     doc_ref.set(team_data)
     return team_data
 
+@app.put("/api/teams/{team_id}")
+def update_team(team_id: str, team_data: dict = Body(...), admin: dict = Depends(require_admin)):
+    # Remove id from the update payload if it exists
+    update_payload = {k: v for k, v in team_data.items() if k != "id"}
+    db.collection("teams").document(team_id).update(update_payload)
+    team_data["id"] = team_id
+    return team_data
+
 @app.delete("/api/teams/{team_id}")
 def delete_team(team_id: str, admin: dict = Depends(require_admin)):
     db.collection("teams").document(team_id).delete()
