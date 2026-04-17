@@ -8,7 +8,7 @@ import { LogOut } from 'lucide-react';
 import './index.css';
 
 function AppContent() {
-  const { user, dbUser, loading } = useAuth();
+  const { user, dbUser, loading, teams, selectedTeam, setSelectedTeam } = useAuth();
 
   if (loading) return <div className="login-screen"><div className="spinner"></div></div>;
 
@@ -46,16 +46,30 @@ function AppContent() {
         <nav className="nav-bar">
           <div className="brand" style={{display:'flex', gap:'30px', alignItems:'center'}}>
             ⚾ MBLL Rotation Manager
-            <div style={{display:'flex', gap:'16px', fontSize:'15px', fontWeight:'500'}}>
+            <div className="nav-links">
               <Link to="/game" style={{color:'var(--text-primary)', textDecoration:'none'}}>Game Setup</Link>
               <Link to="/coach" style={{color:'var(--text-primary)', textDecoration:'none'}}>My Roster</Link>
               {dbUser.role === 'admin' && <Link to="/admin" style={{color:'var(--accent)', textDecoration:'none'}}>League Admin</Link>}
             </div>
           </div>
           <div className="user-info">
-            <span style={{color: 'var(--text-secondary)'}}>{user.email}</span>
+            {teams.length > 1 && (
+              <select 
+                className="select-field team-selector" 
+                value={selectedTeam?.id || ''} 
+                onChange={(e) => {
+                  const t = teams.find(team => team.id === e.target.value);
+                  if (t) setSelectedTeam(t);
+                }}
+              >
+                {teams.map(t => (
+                  <option key={t.id} value={t.id}>{t.Team_Name}</option>
+                ))}
+              </select>
+            )}
+            <span className="hide-on-mobile" style={{color: 'var(--text-secondary)'}}>{user.email}</span>
             <button className="btn btn-danger" onClick={logout}>
-              <LogOut size={16} /> Logout
+              <LogOut size={16} /> <span className="hide-on-mobile">Logout</span>
             </button>
           </div>
         </nav>

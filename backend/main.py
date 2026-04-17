@@ -57,14 +57,13 @@ def require_coach_or_admin(user: dict = Depends(get_current_user)):
 
 @app.get("/api/auth/me")
 def get_me(user: dict = Depends(get_current_user)):
-    assigned_team = None
+    assigned_teams = []
     if user.get("role") in ["coach", "admin"]:
-        teams_ref = db.collection("teams").where("coachEmail", "==", user["email"]).stream()
+        teams_ref = db.collection("teams").where("coachEmails", "array_contains", user["email"]).stream()
         for t in teams_ref:
-            assigned_team = {**t.to_dict(), "id": t.id}
-            break
+            assigned_teams.append({**t.to_dict(), "id": t.id})
             
-    return {"user": user, "team": assigned_team}
+    return {"user": user, "teams": assigned_teams}
 
 @app.get("/api/users")
 def get_users(admin: dict = Depends(require_admin)):
@@ -105,7 +104,7 @@ def get_roster(team_id: str, user: dict = Depends(require_coach_or_admin)):
 def save_roster(team_id: str, roster_data: dict = Body(...), user: dict = Depends(require_coach_or_admin)):
     if user.get("role") != "admin":
         team_doc = db.collection("teams").document(team_id).get()
-        if not team_doc.exists or team_doc.to_dict().get("coachEmail") != user["email"]:
+        if not team_doc.exists or user["email"] not in team_doc.to_dict().get("coachEmails", []):
             raise HTTPException(status_code=403, detail="Not your team")
 
     players = roster_data.get("players", [])

@@ -3,19 +3,22 @@ import { auth } from '../firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { api } from '../api';
 
-type AuthContextType = {
+interface AuthContextType {
   user: User | null;
   dbUser: any | null;
-  team: any | null;
+  teams: any[];
+  selectedTeam: any | null;
+  setSelectedTeam: (team: any) => void;
   loading: boolean;
-};
+}
 
-const AuthContext = createContext<AuthContextType>({ user: null, dbUser: null, team: null, loading: true });
+const AuthContext = createContext<AuthContextType>({} as AuthContextType);
 
-export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
+export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [dbUser, setDbUser] = useState<any | null>(null);
-  const [team, setTeam] = useState<any | null>(null);
+  const [teams, setTeams] = useState<any[]>([]);
+  const [selectedTeam, setSelectedTeam] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -25,19 +28,29 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         try {
           const res = await api.get('/api/auth/me');
           setDbUser(res.data.user);
-          setTeam(res.data.team);
-        } catch (e) {
-          console.error(e);
+          setTeams(res.data.teams || []);
+          if (res.data.teams && res.data.teams.length > 0) {
+            setSelectedTeam(res.data.teams[0]);
+          } else {
+            setSelectedTeam(null);
+          }
+        } catch (error) {
+          console.error("Auth me error", error);
         }
       } else {
         setDbUser(null);
-        setTeam(null);
+        setTeams([]);
+        setSelectedTeam(null);
       }
       setLoading(false);
     });
   }, []);
 
-  return <AuthContext.Provider value={{ user, dbUser, team, loading }}>{children}</AuthContext.Provider>;
-};
+  return (
+    <AuthContext.Provider value={{ user, dbUser, teams, selectedTeam, setSelectedTeam, loading }}>
+      {children}
+    </AuthContext.Provider>
+  );
+}
 
 export const useAuth = () => useContext(AuthContext);

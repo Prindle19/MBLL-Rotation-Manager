@@ -5,7 +5,7 @@ import { api } from '../api';
 import { useAuth } from '../context/AuthContext';
 
 export default function GameSetup() {
-  const { team } = useAuth();
+  const { selectedTeam: team } = useAuth();
   const [activePlayers, setActivePlayers] = useState<any[]>([]);
   const [rotation, setRotation] = useState<any[]>([]);
   const [generating, setGenerating] = useState(false);

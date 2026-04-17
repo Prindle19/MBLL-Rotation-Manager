@@ -3,7 +3,7 @@ import { api } from '../api';
 import { useAuth } from '../context/AuthContext';
 
 export default function CoachPanel() {
-  const { team } = useAuth();
+  const { selectedTeam: team } = useAuth();
   const [roster, setRoster] = useState<any[]>([]);
   const [newPlayer, setNewPlayer] = useState({ name: '', leagueAge: 9, skillInfield: 3, skillOutfield: 3 });
 
