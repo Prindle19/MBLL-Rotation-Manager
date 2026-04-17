@@ -1,5 +1,6 @@
 streamlit>=1.30.0
 pandas>=2.1.0
-st-gsheets-connection>=0.0.3
 streamlit-sortables
-gspread
+firebase-admin
+requests
+google-auth-oauthlib
