@@ -129,28 +129,55 @@ def save_roster(team_id: str, roster_data: dict = Body(...), user: dict = Depend
     batch.commit()
     return {"success": True, "roster": players}
 
+class RotationRequest(BaseModel):
+    ordered_lineup: list[str]
+    league: str
+    locks: dict = {}
+    skills: dict = {}
+    roster_map: dict = {}
+    target_pitcher: str = None
+    projected_pitches: int = 0
+
 @app.post("/api/generate_rotation")
-def generate_rotation(data: dict = Body(...), user: dict = Depends(require_coach_or_admin)):
+def generate_rotation_api(req: RotationRequest, user: dict = Depends(require_coach_or_admin)):
     try:
-        ordered_lineup = data.get("ordered_lineup", [])
-        league = data.get("league", "Majors")
-        target_pitcher = data.get("target_pitcher", None)
-        projected_pitches = data.get("projected_pitches", 0)
-        skills = data.get("skills", {}) 
-        
-        rotation_df = solve_rotation(
-            active_players=ordered_lineup,
-            league=league,
-            locks={},
-            skills=skills,
-            pitcher_name=target_pitcher,
-            projected_pitches=projected_pitches
+        grid_df = solve_rotation(
+            req.ordered_lineup, 
+            req.league, 
+            req.locks,
+            req.skills,
+            req.target_pitcher, 
+            req.projected_pitches
         )
         
-        rotation_dict = rotation_df.reset_index().to_dict(orient="records")
-        return {"rotation": rotation_dict}
+        # Convert df to list of dicts for frontend
+        result = []
+        for player_id, row in grid_df.iterrows():
+            result.append({
+                "id": player_id,
+                "1": row[1], "2": row[2], "3": row[3],
+                "4": row[4], "5": row[5], "6": row[6]
+            })
+            
+        return {"rotation": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/games/{team_id}")
+def get_games(team_id: str, user: dict = Depends(require_coach_or_admin)):
+    games = [{**doc.to_dict(), "id": doc.id} for doc in db.collection("games").where("team_id", "==", team_id).stream()]
+    return {"games": games}
+
+@app.post("/api/games")
+def save_game(game_data: dict = Body(...), user: dict = Depends(require_coach_or_admin)):
+    team_id = game_data.get("team_id")
+    date = game_data.get("date")
+    if not team_id or not date:
+        raise HTTPException(status_code=400, detail="team_id and date required")
+        
+    doc_id = f"{team_id}_{date}"
+    db.collection("games").document(doc_id).set(game_data)
+    return {"success": True, "id": doc_id}
 
 if os.path.isdir("frontend/dist"):
     app.mount("/", StaticFiles(directory="frontend/dist", html=True), name="frontend")
