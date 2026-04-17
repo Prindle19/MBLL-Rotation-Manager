@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from firebase_admin import firestore
 from .firebase_auth import verify_token
 from .logic import solve_rotation
+from pydantic import BaseModel
 import os
 
 app = FastAPI()
