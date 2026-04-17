@@ -1,82 +1,18 @@
-import { useState, useEffect } from 'react';
-import { auth, loginWithGoogle, logout } from './firebase';
-import { onAuthStateChanged, User } from 'firebase/auth';
-import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
-import { LogOut, Play, GripVertical } from 'lucide-react';
-import axios from 'axios';
+import { BrowserRouter, Routes, Route, Link, Navigate } from 'react-router-dom';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import { loginWithGoogle, logout } from './firebase';
+import AdminPanel from './pages/AdminPanel';
+import CoachPanel from './pages/CoachPanel';
+import GameSetup from './pages/GameSetup';
+import { LogOut } from 'lucide-react';
 import './index.css';
 
-function App() {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
-  
-  // App state
-  const [league, setLeague] = useState('Majors');
-  const [activePlayers, setActivePlayers] = useState([
-    { id: '1', name: 'Alice' },
-    { id: '2', name: 'Bob' },
-    { id: '3', name: 'Charlie' },
-    { id: '4', name: 'David' },
-    { id: '5', name: 'Eve' },
-    { id: '6', name: 'Frank' },
-    { id: '7', name: 'Grace' },
-    { id: '8', name: 'Heidi' },
-    { id: '9', name: 'Ivan' },
-  ]);
-  const [rotation, setRotation] = useState<any[]>([]);
-  const [generating, setGenerating] = useState(false);
+function AppContent() {
+  const { user, dbUser, loading } = useAuth();
 
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-      setLoading(false);
-    });
-    return () => unsubscribe();
-  }, []);
+  if (loading) return <div className="login-screen"><div className="spinner"></div></div>;
 
-  const onDragEnd = (result: DropResult) => {
-    if (!result.destination) return;
-    
-    const items = Array.from(activePlayers);
-    const [reorderedItem] = items.splice(result.source.index, 1);
-    items.splice(result.destination.index, 0, reorderedItem);
-    
-    setActivePlayers(items);
-  };
-
-  const generateRotation = async () => {
-    if (!user) return;
-    setGenerating(true);
-    
-    try {
-      const token = await user.getIdToken();
-      
-      const response = await axios.post('/api/generate_rotation', {
-        ordered_lineup: activePlayers.map(p => p.name),
-        league: league,
-        target_pitcher: null,
-        projected_pitches: 0,
-        skills: {}
-      }, {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      });
-      
-      setRotation(response.data.rotation);
-    } catch (error) {
-      console.error("Failed to generate rotation", error);
-      alert("Failed to generate rotation. Is the backend running?");
-    } finally {
-      setGenerating(false);
-    }
-  };
-
-  if (loading) {
-    return <div className="login-screen"><div className="spinner"></div></div>;
-  }
-
-  if (!user) {
+  if (!user || !dbUser) {
     return (
       <div className="login-screen">
         <div className="glass-panel login-box">
@@ -90,117 +26,55 @@ function App() {
     );
   }
 
-  return (
-    <div className="app-container">
-      <nav className="nav-bar">
-        <div className="brand">⚾ MBLL Manager</div>
-        <div className="user-info">
-          <span>{user.email}</span>
-          <button className="btn btn-danger" onClick={logout}>
+  if (dbUser.role === 'pending') {
+    return (
+      <div className="login-screen">
+        <div className="glass-panel login-box">
+          <h1 className="brand">Account Pending</h1>
+          <p>Your account has been created, but an admin needs to approve you and assign a team.</p>
+          <button className="btn btn-danger" style={{ width: '100%', justifyContent: 'center', marginTop: '20px' }} onClick={logout}>
             <LogOut size={16} /> Logout
           </button>
         </div>
-      </nav>
-
-      <div className="grid-layout">
-        <div className="glass-panel">
-          <h2>Game Setup</h2>
-          
-          <div className="form-group">
-            <label>League</label>
-            <select className="select-field" value={league} onChange={(e) => setLeague(e.target.value)}>
-              <option value="Majors">Majors</option>
-              <option value="Minors">Minors</option>
-            </select>
-          </div>
-          
-          <h3 style={{marginTop: '32px'}}>Batting Order</h3>
-          <p style={{color: 'var(--text-secondary)', fontSize: '14px', marginBottom: '16px'}}>
-            Drag to rearrange your dugout order.
-          </p>
-          
-          <DragDropContext onDragEnd={onDragEnd}>
-            <Droppable droppableId="players">
-              {(provided) => (
-                <div {...provided.droppableProps} ref={provided.innerRef}>
-                  {activePlayers.map((player, index) => (
-                    <Draggable key={player.id} draggableId={player.id} index={index}>
-                      {(provided, snapshot) => (
-                        <div
-                          ref={provided.innerRef}
-                          {...provided.draggableProps}
-                          className="player-item"
-                          style={{
-                            ...provided.draggableProps.style,
-                            boxShadow: snapshot.isDragging ? '0 10px 20px rgba(0,0,0,0.2)' : 'none',
-                            transform: snapshot.isDragging ? provided.draggableProps.style?.transform : 'translate(0, 0)'
-                          }}
-                        >
-                          <div {...provided.dragHandleProps} style={{cursor: 'grab', display: 'flex', alignItems: 'center'}}>
-                            <GripVertical size={16} color="var(--text-secondary)" />
-                          </div>
-                          <span>{index + 1}. {player.name}</span>
-                        </div>
-                      )}
-                    </Draggable>
-                  ))}
-                  {provided.placeholder}
-                </div>
-              )}
-            </Droppable>
-          </DragDropContext>
-          
-          <button 
-            className="btn" 
-            style={{ width: '100%', marginTop: '24px', justifyContent: 'center' }}
-            onClick={generateRotation}
-            disabled={generating}
-          >
-            {generating ? <div className="spinner" style={{width: '20px', height: '20px', borderWidth: '2px'}}></div> : <><Play size={16} /> Generate Rotation</>}
-          </button>
-        </div>
-
-        <div className="glass-panel">
-          <h2>Defensive Rotation</h2>
-          
-          {rotation.length > 0 ? (
-            <div style={{overflowX: 'auto'}}>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Player</th>
-                    <th>Inn 1</th>
-                    <th>Inn 2</th>
-                    <th>Inn 3</th>
-                    <th>Inn 4</th>
-                    <th>Inn 5</th>
-                    <th>Inn 6</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rotation.map((row: any, idx: number) => (
-                    <tr key={idx}>
-                      <td><strong>{row.index}</strong></td>
-                      <td>{row['1']}</td>
-                      <td>{row['2']}</td>
-                      <td>{row['3']}</td>
-                      <td>{row['4']}</td>
-                      <td>{row['5']}</td>
-                      <td>{row['6']}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="flex-center" style={{height: '200px', flexDirection: 'column', color: 'var(--text-secondary)'}}>
-              <p>Configure your lineup and generate a rotation.</p>
-            </div>
-          )}
-        </div>
       </div>
-    </div>
+    );
+  }
+
+  return (
+    <BrowserRouter>
+      <div className="app-container">
+        <nav className="nav-bar">
+          <div className="brand" style={{display:'flex', gap:'30px', alignItems:'center'}}>
+            ⚾ MBLL Rotation Manager
+            <div style={{display:'flex', gap:'16px', fontSize:'15px', fontWeight:'500'}}>
+              <Link to="/game" style={{color:'var(--text-primary)', textDecoration:'none'}}>Game Setup</Link>
+              <Link to="/coach" style={{color:'var(--text-primary)', textDecoration:'none'}}>My Roster</Link>
+              {dbUser.role === 'admin' && <Link to="/admin" style={{color:'var(--accent)', textDecoration:'none'}}>League Admin</Link>}
+            </div>
+          </div>
+          <div className="user-info">
+            <span style={{color: 'var(--text-secondary)'}}>{user.email}</span>
+            <button className="btn btn-danger" onClick={logout}>
+              <LogOut size={16} /> Logout
+            </button>
+          </div>
+        </nav>
+
+        <Routes>
+          <Route path="/" element={<Navigate to="/game" />} />
+          <Route path="/game" element={<GameSetup />} />
+          <Route path="/coach" element={<CoachPanel />} />
+          {dbUser.role === 'admin' && <Route path="/admin" element={<AdminPanel />} />}
+        </Routes>
+      </div>
+    </BrowserRouter>
   );
 }
 
-export default App;
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
+  );
+}

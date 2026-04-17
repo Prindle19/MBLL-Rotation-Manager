@@ -8,7 +8,7 @@ security = HTTPBearer()
 try:
     get_app()
 except ValueError:
-    initialize_app()  # Uses Application Default Credentials in Cloud Run
+    initialize_app(options={"projectId": os.environ.get("GOOGLE_CLOUD_PROJECT", "mbll-rotation-manager")})  # Uses Application Default Credentials in Cloud Run
 
 def verify_token(credentials: HTTPAuthorizationCredentials = Security(security)):
     token = credentials.credentials
