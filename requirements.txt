@@ -1,5 +1,5 @@
 streamlit>=1.30.0
-pandas>=1.3.0,<2.0.0
-st-gsheets-connection==0.0.3
+pandas>=2.1.0
+st-gsheets-connection>=0.0.3
 streamlit-sortables
 gspread
