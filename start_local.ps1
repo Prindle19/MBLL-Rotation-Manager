@@ -1,5 +1,5 @@
 Write-Host "Starting FastAPI Backend..."
-Start-Process powershell -ArgumentList "-NoExit -Command `"cd backend; uvicorn main:app --reload --port 8000`""
+Start-Process powershell -ArgumentList "-NoExit -Command `"python -m uvicorn backend.main:app --reload --port 8000`""
 Write-Host "Starting Vite Frontend..."
 Start-Process powershell -ArgumentList "-NoExit -Command `"cd frontend; npm run dev`""
 Write-Host "Both servers started in new windows!"

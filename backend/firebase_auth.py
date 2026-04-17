@@ -1,6 +1,6 @@
 from fastapi import Request, HTTPException, Security
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from firebase_admin import auth, initialize_app, get_app
+from firebase_admin import auth, initialize_app, get_app, credentials
 import os
 
 security = HTTPBearer()
@@ -8,7 +8,12 @@ security = HTTPBearer()
 try:
     get_app()
 except ValueError:
-    initialize_app(options={"projectId": os.environ.get("GOOGLE_CLOUD_PROJECT", "mbll-rotation-manager")})  # Uses Application Default Credentials in Cloud Run
+    key_path = os.path.join(os.path.dirname(__file__), "serviceAccountKey.json")
+    if os.path.exists(key_path):
+        cred = credentials.Certificate(key_path)
+        initialize_app(cred)
+    else:
+        initialize_app(options={"projectId": os.environ.get("GOOGLE_CLOUD_PROJECT", "mbll-rotation-manager")})
 
 def verify_token(credentials: HTTPAuthorizationCredentials = Security(security)):
     token = credentials.credentials
