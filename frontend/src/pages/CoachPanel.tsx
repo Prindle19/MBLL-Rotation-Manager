@@ -35,10 +35,16 @@ export default function CoachPanel() {
     <div className="glass-panel" style={{maxWidth: '800px', margin: '0 auto'}}>
       <h2>Manage Roster: {team.Team_Name} ({team.League})</h2>
       
-      <div style={{display:'flex', gap:'10px', marginBottom:'20px'}}>
-        <input className="input-field" placeholder="Player Name" value={newPlayer.name} onChange={e => setNewPlayer({...newPlayer, name: e.target.value})} />
-        <input type="number" className="input-field" placeholder="Age" value={newPlayer.leagueAge} onChange={e => setNewPlayer({...newPlayer, leagueAge: parseInt(e.target.value)})} style={{width:'80px'}} />
-        <button className="btn" onClick={addPlayer}>Add Player</button>
+      <div style={{display:'flex', gap:'10px', alignItems: 'flex-end', marginBottom:'20px'}}>
+        <div style={{display: 'flex', flexDirection: 'column', gap: '4px', flex: 1}}>
+          <label style={{fontSize: '12px', color: 'var(--text-secondary)'}}>Player Name</label>
+          <input className="input-field" placeholder="Enter name" value={newPlayer.name} onChange={e => setNewPlayer({...newPlayer, name: e.target.value})} />
+        </div>
+        <div style={{display: 'flex', flexDirection: 'column', gap: '4px'}}>
+          <label style={{fontSize: '12px', color: 'var(--text-secondary)'}}>Age</label>
+          <input type="number" className="input-field" value={newPlayer.leagueAge} onChange={e => setNewPlayer({...newPlayer, leagueAge: parseInt(e.target.value)})} style={{width:'80px'}} />
+        </div>
+        <button className="btn" style={{height: '46px'}} onClick={addPlayer}>Add</button>
       </div>
 
       <table>
@@ -48,10 +54,10 @@ export default function CoachPanel() {
             <tr key={p.id}>
               <td>{p.name}</td>
               <td>{p.leagueAge}</td>
-              <td><input type="number" className="input-field" value={p.skillInfield} onChange={(e) => {
+              <td><input type="number" min="1" max="5" className="input-field" value={p.skillInfield} onChange={(e) => {
                 setRoster(roster.map(r => r.id === p.id ? {...r, skillInfield: parseInt(e.target.value)} : r));
               }} style={{width:'80px'}}/></td>
-              <td><input type="number" className="input-field" value={p.skillOutfield} onChange={(e) => {
+              <td><input type="number" min="1" max="5" className="input-field" value={p.skillOutfield} onChange={(e) => {
                 setRoster(roster.map(r => r.id === p.id ? {...r, skillOutfield: parseInt(e.target.value)} : r));
               }} style={{width:'80px'}}/></td>
               <td><button className="btn btn-danger" onClick={() => removePlayer(p.id)}>Remove</button></td>

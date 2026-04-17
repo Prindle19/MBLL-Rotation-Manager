@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
 import { api } from '../api';
+import { useAuth } from '../context/AuthContext';
 
 export default function AdminPanel() {
+  const { refreshAuth } = useAuth();
   const [users, setUsers] = useState<any[]>([]);
   const [teams, setTeams] = useState<any[]>([]);
   const [newTeam, setNewTeam] = useState({ Team_Name: '', League: 'Majors', coachEmails: [] as string[] });
@@ -37,7 +39,8 @@ export default function AdminPanel() {
     }
     setNewTeam({ Team_Name: '', League: 'Majors', coachEmails: [] });
     setEditingTeamId(null);
-    fetchData();
+    await fetchData();
+    await refreshAuth();
   };
 
   const startEditTeam = (team: any) => {

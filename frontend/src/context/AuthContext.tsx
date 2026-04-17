@@ -10,6 +10,7 @@ interface AuthContextType {
   selectedTeam: any | null;
   setSelectedTeam: (team: any) => void;
   loading: boolean;
+  refreshAuth: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({} as AuthContextType);
@@ -20,6 +21,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [teams, setTeams] = useState<any[]>([]);
   const [selectedTeam, setSelectedTeam] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const refreshAuth = async () => {
+    if (!auth.currentUser) return;
+    try {
+      const res = await api.get('/api/auth/me');
+      setDbUser(res.data.user);
+      setTeams(res.data.teams || []);
+      if (res.data.teams && res.data.teams.length > 0) {
+        setSelectedTeam(res.data.teams[0]);
+      } else {
+        setSelectedTeam(null);
+      }
+    } catch (error) {
+      console.error("Auth me error", error);
+    }
+  };
 
   useEffect(() => {
     return onAuthStateChanged(auth, async (currentUser) => {
@@ -47,7 +64,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, dbUser, teams, selectedTeam, setSelectedTeam, loading }}>
+    <AuthContext.Provider value={{ user, dbUser, teams, selectedTeam, setSelectedTeam, loading, refreshAuth }}>
       {children}
     </AuthContext.Provider>
   );
