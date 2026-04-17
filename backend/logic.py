@@ -61,20 +61,25 @@ def solve_rotation(active_players, league, locks, skills, pitcher_name=None, pro
             p_skills = skills.get(p_id, {"IF": 3, "OF": 3})
             
             # Determine needs
-            needs_of = of_counts[p_id] < 1
-            needs_if = if_counts[p_id] < 2 if league == "Minors" else False
+            is_sub = str(p_id).startswith("sub_")
+            needs_of = of_counts[p_id] < 1 or is_sub
+            needs_if = (if_counts[p_id] < 2 if league == "Minors" else False) and not is_sub
             
             chosen_pos = None
             possible_if = [s for s in available_slots if s in if_pos]
             possible_of = [s for s in available_slots if s in of_pos]
             
-            if needs_of and possible_of:
+            if is_sub and 'RF' in available_slots:
+                chosen_pos = 'RF'
+            elif needs_of and possible_of:
                 chosen_pos = random.choice(possible_of)
             elif needs_if and possible_if:
                 chosen_pos = random.choice(possible_if)
             else:
                 # Based on skills
-                if p_skills["IF"] >= p_skills["OF"] and possible_if:
+                if is_sub and possible_of:
+                    chosen_pos = random.choice(possible_of)
+                elif p_skills["IF"] >= p_skills["OF"] and possible_if:
                     chosen_pos = random.choice(possible_if)
                 elif p_skills["OF"] > p_skills["IF"] and possible_of:
                     chosen_pos = random.choice(possible_of)
