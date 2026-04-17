@@ -163,10 +163,15 @@ def generate_rotation_api(req: RotationRequest, user: dict = Depends(require_coa
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+from google.cloud.firestore_v1.base_query import FieldFilter
+
 @app.get("/api/games/{team_id}")
 def get_games(team_id: str, user: dict = Depends(require_coach_or_admin)):
-    games = [{**doc.to_dict(), "id": doc.id} for doc in db.collection("games").where("team_id", "==", team_id).stream()]
-    return {"games": games}
+    try:
+        games = [{**doc.to_dict(), "id": doc.id} for doc in db.collection("games").where(filter=FieldFilter("team_id", "==", team_id)).stream()]
+        return {"games": games}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/games")
 def save_game(game_data: dict = Body(...), user: dict = Depends(require_coach_or_admin)):

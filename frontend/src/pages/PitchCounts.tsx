@@ -16,12 +16,18 @@ export default function PitchCounts() {
   }, [team]);
 
   const fetchData = async () => {
-    const [gRes, rRes] = await Promise.all([
-      api.get(`/api/games/${team.id}`),
-      api.get(`/api/roster/${team.id}`)
-    ]);
-    setGames(gRes.data.games.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime()));
-    setRoster(rRes.data.roster);
+    try {
+      const rRes = await api.get(`/api/roster/${team.id}`);
+      setRoster(rRes.data.roster);
+    } catch (e) {
+      console.error("Failed to fetch roster", e);
+    }
+    try {
+      const gRes = await api.get(`/api/games/${team.id}`);
+      setGames(gRes.data.games.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+    } catch (e) {
+      console.error("Failed to fetch games", e);
+    }
   };
 
   const savePastGame = async () => {
