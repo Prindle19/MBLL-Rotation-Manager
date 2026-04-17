@@ -1,12 +1,15 @@
 import pandas as pd
 import random
 
-def solve_rotation(active_players, league, locks, skills, pitcher_name=None, projected_pitches=0):
+def solve_rotation(active_players, league, locks, skills, pitcher_name=None, projected_pitches=0, active_count=10):
     innings = [1, 2, 3, 4, 5, 6]
     
     if league == "Minors":
         if_pos = ['P', 'C', '1B', '2B', '3B', 'SS'] 
-        of_pos = ['LF', 'LC', 'RC', 'RF']
+        if active_count < 10:
+            of_pos = ['LF', 'CF', 'RF']
+        else:
+            of_pos = ['LF', 'LC', 'RC', 'RF']
     else:
         if_pos = ['P', 'C', '1B', '2B', '3B', 'SS']
         of_pos = ['LF', 'CF', 'RF']

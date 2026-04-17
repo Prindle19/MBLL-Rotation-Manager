@@ -174,6 +174,11 @@ h1, h2, h3 {
   border-color: var(--accent);
 }
 
+.select-field option {
+  background-color: #0f172a;
+  color: #f8fafc;
+}
+
 .player-item {
   background: rgba(30, 41, 59, 0.8);
   border: 1px solid var(--border-color);

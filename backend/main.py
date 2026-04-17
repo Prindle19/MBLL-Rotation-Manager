@@ -138,6 +138,7 @@ class RotationRequest(BaseModel):
     roster_map: dict = {}
     target_pitcher: str = None
     projected_pitches: int = 0
+    active_count: int = 10
 
 @app.post("/api/generate_rotation")
 def generate_rotation_api(req: RotationRequest, user: dict = Depends(require_coach_or_admin)):
@@ -148,7 +149,8 @@ def generate_rotation_api(req: RotationRequest, user: dict = Depends(require_coa
             req.locks,
             req.skills,
             req.target_pitcher, 
-            req.projected_pitches
+            req.projected_pitches,
+            req.active_count
         )
         
         # Convert df to list of dicts for frontend

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
-import { Play, GripVertical, Check, X } from 'lucide-react';
+import { Play, GripVertical, Check, X, UserPlus, AlertCircle } from 'lucide-react';
 import { api } from '../api';
 import { useAuth } from '../context/AuthContext';
 
@@ -13,6 +13,7 @@ export default function GameSetup() {
   
   // Game metadata
   const [allTeams, setAllTeams] = useState<any[]>([]);
+  const [pastGames, setPastGames] = useState<any[]>([]);
   const [gameDate, setGameDate] = useState(new Date().toISOString().split('T')[0]);
   const [opponent, setOpponent] = useState('');
   const [isHome, setIsHome] = useState(true);
@@ -22,20 +23,103 @@ export default function GameSetup() {
   const [rotation, setRotation] = useState<any[]>([]);
   const [generating, setGenerating] = useState(false);
   const [validationMsg, setValidationMsg] = useState('');
+  
+  // Sub state
+  const [subName, setSubName] = useState('');
+  
+  // Pitch warnings
+  const [pitchWarnings, setPitchWarnings] = useState<Record<string, string>>({});
 
-  // Fetch roster & all teams
+  // Fetch roster & all teams & past games for lineup persistence
   useEffect(() => {
     if (team) {
-      api.get(`/api/roster/${team.id}`).then(res => {
-        const r = res.data.roster.map((p: any) => ({ ...p, isActive: true }));
+      Promise.all([
+        api.get(`/api/roster/${team.id}`),
+        api.get('/api/teams'),
+        api.get(`/api/games/${team.id}`)
+      ]).then(([rRes, tRes, gRes]) => {
+        let r = rRes.data.roster.map((p: any) => ({ ...p, isActive: true }));
+        setAllTeams(tRes.data.teams);
+        
+        // Find most recent past game
+        const fetchedPastGames = gRes.data.games.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        setPastGames(fetchedPastGames);
+        
+        if (fetchedPastGames.length > 0) {
+          const lastGame = fetchedPastGames[0];
+          // Restore lineup order
+          if (lastGame.activePlayers) {
+            // merge activePlayers order with current roster (in case roster changed)
+            const oldOrderIds = lastGame.activePlayers.map((p: any) => p.id);
+            const orderedRoster = [];
+            for (const id of oldOrderIds) {
+              const player = r.find((p: any) => p.id === id);
+              if (player) {
+                orderedRoster.push({ ...player, isActive: lastGame.activePlayers.find((p:any) => p.id === id)?.isActive ?? true });
+                r = r.filter((p: any) => p.id !== id);
+              } else if (id.startsWith('sub_')) {
+                // Restore subs if they were in the last game
+                const subPlayer = lastGame.activePlayers.find((p:any) => p.id === id);
+                if (subPlayer) {
+                  orderedRoster.push(subPlayer);
+                }
+              }
+            }
+            r = [...orderedRoster, ...r]; // append any new players
+          }
+          // Restore locks
+          if (lastGame.locks) {
+            setLocks(lastGame.locks);
+          }
+        }
+        
         setRoster(r);
         setActivePlayers(r);
-      });
-      api.get('/api/teams').then(res => {
-        setAllTeams(res.data.teams);
+      }).catch(err => {
+        console.error("Failed to load setup data", err);
       });
     }
   }, [team]);
+
+  // Recalculate pitch count eligibility
+  useEffect(() => {
+    if (!team || pastGames.length === 0) return;
+    
+    const warnings: Record<string, string> = {};
+    const selectedDate = new Date(gameDate);
+    selectedDate.setHours(0,0,0,0);
+    
+    activePlayers.forEach(p => {
+      // Find the most recent game BEFORE the selectedDate where they pitched
+      for (const game of pastGames) {
+        const gDate = new Date(game.date);
+        gDate.setHours(0,0,0,0);
+        if (gDate.getTime() >= selectedDate.getTime()) continue;
+        
+        let pitchCount = 0;
+        if (game.pitchCounts && game.pitchCounts[p.id]) {
+          pitchCount = game.pitchCounts[p.id];
+        }
+        
+        if (pitchCount > 0) {
+          const daysDiff = Math.floor((selectedDate.getTime() - gDate.getTime()) / (1000 * 60 * 60 * 24)); 
+          const daysRest = daysDiff - 1; // Calendar days between games
+          
+          let requiredRest = 0;
+          if (pitchCount >= 66) requiredRest = 4;
+          else if (pitchCount >= 51) requiredRest = 3;
+          else if (pitchCount >= 36) requiredRest = 2;
+          else if (pitchCount >= 21) requiredRest = 1;
+          
+          if (daysRest < requiredRest) {
+            warnings[p.id] = `🔴 Ineligible to Pitch (Pitched ${pitchCount} on ${game.date}, needs ${requiredRest} days rest, has ${Math.max(0, daysRest)})`;
+          }
+          break; // Found their most recent pitching appearance
+        }
+      }
+    });
+    setPitchWarnings(warnings);
+  }, [gameDate, pastGames, activePlayers, team]);
 
   const onDragEnd = (result: DropResult) => {
     if (!result.destination) return;
@@ -49,6 +133,20 @@ export default function GameSetup() {
     setActivePlayers(activePlayers.map(p => p.id === id ? { ...p, isActive: !p.isActive } : p));
   };
 
+  const addTemporarySub = () => {
+    if (!subName.trim()) return;
+    const sub = {
+      id: `sub_${Date.now()}`,
+      name: subName.trim() + " (Sub)",
+      leagueAge: team?.League === 'Majors' ? 12 : 10,
+      skillInfield: 3,
+      skillOutfield: 3,
+      isActive: true
+    };
+    setActivePlayers([...activePlayers, sub]);
+    setSubName('');
+  };
+
   const updateLock = (playerId: string, inn: string, pos: string) => {
     setLocks(prev => {
       const pLocks = { ...(prev[playerId] || {}) };
@@ -59,10 +157,10 @@ export default function GameSetup() {
       }
       return { ...prev, [playerId]: pLocks };
     });
-    // Setting a lock means we manually overrode something, 
-    // we can update the rotation state locally if it exists
     setRotation(prev => prev.map(r => r.id === playerId ? {...r, [inn]: pos} : r));
   };
+
+  const activeCount = activePlayers.filter(p => p.isActive).length;
 
   const generateRotation = async () => {
     setGenerating(true);
@@ -78,7 +176,8 @@ export default function GameSetup() {
         league: team?.League || 'Majors',
         locks: locks,
         skills: skillsMap,
-        roster_map: Object.fromEntries(activePlayers.map(p => [p.id, p.name]))
+        roster_map: Object.fromEntries(activePlayers.map(p => [p.id, p.name])),
+        active_count: activeCount
       };
       
       const response = await api.post('/api/generate_rotation', payload);
@@ -118,7 +217,9 @@ export default function GameSetup() {
   if (!team) return <div className="glass-panel" style={{textAlign: 'center', padding: '50px'}}>You need an Admin to assign you to a Team before setting up a game.</div>;
 
   const positions = team.League === 'Minors' 
-    ? ['P', 'C', '1B', '2B', '3B', 'SS', 'LF', 'LC', 'RC', 'RF', 'Bench']
+    ? (activeCount < 10 
+        ? ['P', 'C', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF', 'Bench'] 
+        : ['P', 'C', '1B', '2B', '3B', 'SS', 'LF', 'LC', 'RC', 'RF', 'Bench'])
     : ['P', 'C', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF', 'Bench'];
 
   const opponentTeams = allTeams.filter(t => t.League === team.League && t.id !== team.id);
@@ -159,7 +260,7 @@ export default function GameSetup() {
         <div className="glass-panel">
           <h2>Lineup / Active Players</h2>
           <p style={{color: 'var(--text-secondary)', fontSize: '14px', marginBottom: '16px'}}>
-            Drag to reorder. Toggle active status.
+            {activeCount} Active Players
           </p>
           
           <DragDropContext onDragEnd={onDragEnd}>
@@ -182,11 +283,19 @@ export default function GameSetup() {
                           <div {...provided.dragHandleProps} style={{cursor: 'grab', display: 'flex', alignItems: 'center'}}>
                             <GripVertical size={16} color="var(--text-secondary)" />
                           </div>
-                          <span style={{flex: 1, textDecoration: player.isActive ? 'none' : 'line-through'}}>{index + 1}. {player.name}</span>
+                          <div style={{flex: 1, display: 'flex', flexDirection: 'column'}}>
+                            <span style={{textDecoration: player.isActive ? 'none' : 'line-through'}}>{index + 1}. {player.name}</span>
+                            {pitchWarnings[player.id] && player.isActive && (
+                              <span style={{fontSize: '11px', color: '#ef4444', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px'}}>
+                                <AlertCircle size={12}/> {pitchWarnings[player.id]}
+                              </span>
+                            )}
+                          </div>
                           <button 
                             className={`btn ${player.isActive ? '' : 'btn-danger'}`} 
                             style={{padding: '4px 8px', fontSize: '12px'}}
                             onClick={() => toggleActive(player.id)}
+                            title="Toggle Active Status"
                           >
                             {player.isActive ? <Check size={14}/> : <X size={14}/>}
                           </button>
@@ -200,11 +309,23 @@ export default function GameSetup() {
             </Droppable>
           </DragDropContext>
           
+          <div style={{marginTop: '20px', display: 'flex', gap: '8px'}}>
+            <input 
+              type="text" 
+              className="input-field" 
+              placeholder="Temporary Sub Name" 
+              value={subName}
+              onChange={e => setSubName(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && addTemporarySub()}
+            />
+            <button className="btn" onClick={addTemporarySub}><UserPlus size={16}/></button>
+          </div>
+
           <button 
             className="btn" 
             style={{ width: '100%', marginTop: '24px', justifyContent: 'center' }}
             onClick={generateRotation}
-            disabled={generating || activePlayers.filter(p => p.isActive).length === 0}
+            disabled={generating || activeCount === 0}
           >
             {generating ? <div className="spinner" style={{width: '20px', height: '20px', borderWidth: '2px'}}></div> : <><Play size={16} /> Generate Rotation</>}
           </button>
