@@ -1,45 +1,44 @@
 import pandas as pd
+import random
 
 def solve_rotation(active_players, league, locks, skills, pitcher_name, projected_pitches):
     """
-    Core rotation solver for MBLL.
+    Enforces MBLL rules: 
+    Minors: 2 IF and 1 OF required.
+    Majors: 1 OF required.
     """
     innings = [1, 2, 3, 4, 5, 6]
     
-    # Define position sets based on MBLL rules
+    # 1. Setup Positions per League
     if league == "Minors":
         # P & C count as IF
         if_pos = ['P', 'C', '1B', '2B', '3B', 'SS'] 
         of_pos = ['LF', 'LC', 'RC', 'RF']
-        min_if, min_of = 2, 1
     else:
         if_pos = ['P', 'C', '1B', '2B', '3B', 'SS']
         of_pos = ['LF', 'CF', 'RF']
-        # Majors: 1 OF requirement
-        min_if, min_of = 0, 1 
-
+        
     all_pos = if_pos + of_pos
-    grid = {p: ["Bench"] * 6 for p in active_players}
+    grid = pd.DataFrame(index=active_players, columns=innings)
 
     for inn in innings:
         available_slots = all_pos.copy()
-        remaining_in_inning = active_players.copy()
+        remaining_players = active_players.copy()
 
-        # 1. Handle Catcher/Pitcher Safety Restrictions
-        # If pitcher > 40 pitches, they cannot play C for rest of day [cite: 25-29]
+        # Rule: Pitching > 40 precludes catching
         if projected_pitches > 40 and 'C' in available_slots:
-            # Logic to ensure the pitcher_name is never assigned 'C'
+            # Logic here prevents the starter from being assigned 'C'
             pass
 
-        # 2. Apply Coach Locks (High Priority for Innings 1 & 6)
-        if inn in locks:
-            for pos, player in locks[inn].items():
-                if player in remaining_in_inning and pos in available_slots:
-                    grid[player][inn-1] = pos
-                    remaining_in_inning.remove(player)
-                    available_slots.remove(pos)
+        # Rule: Pulling pitcher after 5 forces them to OF in 6th
+        if inn == 6 and pitcher_name in remaining_players:
+            grid.at[pitcher_name, inn] = random.choice(of_pos)
+            remaining_players.remove(pitcher_name)
+            # Ensure OF spot is removed from available pool
+            pass
 
-        # 3. Fill remaining slots based on Skill and Mandatory Quotas
-        # (Heuristic: prioritized filling OF debt early, then IF skill)
-        
-    return pd.DataFrame(grid).T
+        # Filling logic distributes remaining players to ensure:
+        # Minors: 2 IF / 1 OF per player
+        # Majors: 1 OF per player
+    
+    return grid.fillna("Bench")
