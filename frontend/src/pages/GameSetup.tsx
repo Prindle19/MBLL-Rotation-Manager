@@ -42,6 +42,9 @@ export default function GameSetup() {
   // Pitch warnings
   const [pitchWarnings, setPitchWarnings] = useState<Record<string, string>>({});
 
+  // Donation Popup State
+  const [showDonationPopup, setShowDonationPopup] = useState(false);
+
   // Fetch roster & all teams & past games for lineup persistence
   useEffect(() => {
     if (team) {
@@ -612,7 +615,14 @@ export default function GameSetup() {
               )}
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '30px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '30px' }}>
+              <button 
+                className="btn" 
+                style={{ background: 'var(--panel-bg)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+                onClick={() => setShowDonationPopup(true)}
+              >
+                🍻 Buy Sean a Beer
+              </button>
               <img src="/StreamSplitterLogo.png" alt="StreamSplitter" style={{height: '60px'}} />
             </div>
             
@@ -621,6 +631,44 @@ export default function GameSetup() {
       </div>
 
     </div>
+
+      {showDonationPopup && (
+        <div className="modal-backdrop" onClick={() => setShowDonationPopup(false)}>
+          <div className="glass-panel" style={{maxWidth: '400px', width: '100%', textAlign: 'center'}} onClick={e => e.stopPropagation()}>
+            <h2 style={{marginTop: 0, marginBottom: '24px'}}>🍻 Buy Sean a Beer!</h2>
+            <p style={{color: 'var(--text-secondary)', marginBottom: '24px', lineHeight: '1.5'}}>
+              If you found this tool helpful for managing your rotation, consider buying me a beer!
+            </p>
+            <div style={{display: 'flex', flexDirection: 'column', gap: '16px'}}>
+              <a 
+                href="https://account.venmo.com/u/SeanWohltman" 
+                target="_blank" 
+                rel="noopener noreferrer" 
+                className="btn" 
+                style={{justifyContent: 'center', background: '#008CFF', color: 'white', border: 'none'}}
+              >
+                Donate via Venmo
+              </a>
+              <a 
+                href="https://paypal.me/SeanWohltman" 
+                target="_blank" 
+                rel="noopener noreferrer" 
+                className="btn" 
+                style={{justifyContent: 'center', background: '#003087', color: 'white', border: 'none'}}
+              >
+                Donate via PayPal
+              </a>
+              <button 
+                className="btn btn-danger" 
+                style={{justifyContent: 'center', marginTop: '8px'}}
+                onClick={() => setShowDonationPopup(false)}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
