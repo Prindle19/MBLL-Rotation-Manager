@@ -112,6 +112,16 @@ def update_user_role(email: str, role_data: dict = Body(...), admin: dict = Depe
 @app.delete("/api/users/{email}")
 def delete_user(email: str, admin: dict = Depends(require_admin)):
     db.collection("users").document(email).delete()
+    
+    # Remove from any teams they are assigned to
+    teams_ref = db.collection("teams").where(filter=FieldFilter("coachEmails", "array_contains", email)).stream()
+    for team_doc in teams_ref:
+        team_data = team_doc.to_dict()
+        coach_emails = team_data.get("coachEmails", [])
+        if email in coach_emails:
+            coach_emails.remove(email)
+            db.collection("teams").document(team_doc.id).update({"coachEmails": coach_emails})
+            
     return {"success": True}
 
 @app.get("/api/teams")

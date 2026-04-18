@@ -6,6 +6,7 @@ import CoachPanel from './pages/CoachPanel';
 import GameSetup from './pages/GameSetup';
 import PitchCounts from './pages/PitchCounts';
 import PastGames from './pages/PastGames';
+import RulesEngine from './pages/RulesEngine';
 import { LogOut } from 'lucide-react';
 import './index.css';
 
@@ -56,6 +57,7 @@ function AppContent() {
               <Link to="/coach" style={{color:'var(--text-primary)', textDecoration:'none'}}>My Roster</Link>
               <Link to="/past-games" style={{color:'var(--text-primary)', textDecoration:'none'}}>Past Games</Link>
               <Link to="/pitch-counts" style={{color:'var(--text-primary)', textDecoration:'none'}}>Pitch Counts</Link>
+              <Link to="/rules" style={{color:'var(--text-primary)', textDecoration:'none'}}>Rules Logic</Link>
               {dbUser.role === 'admin' && <Link to="/admin" style={{color:'var(--accent)', textDecoration:'none'}}>League Admin</Link>}
             </div>
           </div>
@@ -87,6 +89,7 @@ function AppContent() {
           <Route path="/coach" element={<CoachPanel />} />
           <Route path="/past-games" element={<PastGames />} />
           <Route path="/pitch-counts" element={<PitchCounts />} />
+          <Route path="/rules" element={<RulesEngine />} />
           <Route path="/admin" element={dbUser?.role === 'admin' ? <AdminPanel /> : <Navigate to="/" />} />
         </Routes>
       </div>

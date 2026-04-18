@@ -78,7 +78,7 @@ def solve_rotation(active_players, league, locks, skills, pitcher_name=None, pro
             
             urgency = 0
             
-            # Crisis Mode: They have exactly enough (or fewer) open slots to meet their needs. 
+            # Absolute Priority Mode: They have exactly enough (or fewer) open slots to meet their needs. 
             # They MUST go first.
             if reqs_needed > 0 and reqs_needed >= open_slots:
                 urgency = 1000000 + (reqs_needed * 1000) - open_slots
@@ -125,15 +125,38 @@ def solve_rotation(active_players, league, locks, skills, pitcher_name=None, pro
             elif needs_if and possible_if:
                 chosen_pos = random.choice(possible_if)
             else:
-                # Based on skills
+                # Based on skills (pick zone randomly if both exist, then use skill for specific position)
+                zone_choices = []
+                if possible_if: zone_choices.append("IF")
+                if possible_of: zone_choices.append("OF")
+                
                 if is_sub and possible_of:
-                    chosen_pos = random.choice(possible_of)
-                elif p_skills["IF"] >= p_skills["OF"] and possible_if:
-                    chosen_pos = random.choice(possible_if)
-                elif p_skills["OF"] > p_skills["IF"] and possible_of:
-                    chosen_pos = random.choice(possible_of)
-                elif player_slots:
-                    chosen_pos = random.choice(player_slots)
+                    zone = "OF"
+                elif zone_choices:
+                    zone = random.choice(zone_choices)
+                else:
+                    zone = None
+                    
+                if zone == "OF":
+                    of_skill = p_skills["OF"]
+                    premium_of = [p for p in possible_of if p in ['CF', 'LC', 'LF']]
+                    hidden_of = [p for p in possible_of if p in ['RF', 'RC']]
+                    if of_skill >= 4 and premium_of:
+                        chosen_pos = random.choice(premium_of)
+                    elif of_skill <= 2 and hidden_of:
+                        chosen_pos = random.choice(hidden_of)
+                    else:
+                        chosen_pos = random.choice(possible_of)
+                elif zone == "IF":
+                    if_skill = p_skills["IF"]
+                    premium_if = [p for p in possible_if if p in ['SS', '1B', '3B']]
+                    hidden_if = [p for p in possible_if if p in ['2B']]
+                    if if_skill >= 4 and premium_if:
+                        chosen_pos = random.choice(premium_if)
+                    elif if_skill <= 2 and hidden_if:
+                        chosen_pos = random.choice(hidden_if)
+                    else:
+                        chosen_pos = random.choice(possible_if)
                     
             if chosen_pos:
                 grid.at[p_id, inn] = chosen_pos

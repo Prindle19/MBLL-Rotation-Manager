@@ -157,7 +157,16 @@ export default function GameSetup() {
     prevActiveRef.current = activePlayers;
   }, [activePlayers]);
 
+  const onDragStart = () => {
+    if (window.innerWidth <= 768) {
+      document.body.style.overflow = 'hidden';
+      document.body.style.touchAction = 'none';
+    }
+  };
+
   const onDragEnd = (result: DropResult) => {
+    document.body.style.overflow = '';
+    document.body.style.touchAction = '';
     if (!result.destination) return;
     const items = Array.from(activePlayers);
     const [reorderedItem] = items.splice(result.source.index, 1);
@@ -205,6 +214,14 @@ export default function GameSetup() {
       if (pos === 'P') pCount++;
     }
     return pCount * 15;
+  };
+
+  const getMaxPitches = (age: number) => {
+    if (!age) return 85; // default fallback
+    if (age <= 8) return 50;
+    if (age <= 10) return 75;
+    if (age <= 12) return 85;
+    return 95;
   };
 
   const generateRotation = async () => {
@@ -403,7 +420,7 @@ export default function GameSetup() {
             {activeCount} Active Players
           </p>
           
-          <DragDropContext onDragEnd={onDragEnd}>
+          <DragDropContext onDragStart={onDragStart} onDragEnd={onDragEnd}>
             <Droppable droppableId="players">
               {(provided) => (
                 <div {...provided.droppableProps} ref={provided.innerRef}>
@@ -433,11 +450,21 @@ export default function GameSetup() {
                                 <AlertCircle size={12}/> {pitchWarnings[player.id]}
                               </span>
                             )}
-                            {getEstPitches(player.id) > 0 && !pitchWarnings[player.id] && player.isActive && (
-                              <span style={{fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px'}}>
-                                ⚾ Est. Pitches: ~{getEstPitches(player.id)}
-                              </span>
-                            )}
+                            {(() => {
+                              const est = getEstPitches(player.id);
+                              const max = getMaxPitches(player.leagueAge || (team?.League === 'Majors' ? 12 : 10));
+                              const isOverMax = est > max;
+                              
+                              if (est > 0 && !pitchWarnings[player.id] && player.isActive) {
+                                return (
+                                  <span style={{fontSize: '11px', color: isOverMax ? '#ef4444' : 'var(--text-secondary)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px'}}>
+                                    {isOverMax && <AlertCircle size={12}/>}
+                                    ⚾ Est. Pitches: ~{est} {isOverMax ? `(Exceeds daily max of ${max})` : ''}
+                                  </span>
+                                );
+                              }
+                              return null;
+                            })()}
                           </div>
                           <button 
                             className={`btn ${player.isActive ? '' : 'btn-danger'}`} 

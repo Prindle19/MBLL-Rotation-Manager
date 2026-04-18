@@ -145,6 +145,12 @@ h1, h2, h3 {
   gap: 24px;
 }
 
+.pitch-counts-layout {
+  display: grid;
+  grid-template-columns: 1.5fr 1fr;
+  gap: 24px;
+}
+
 .form-group {
   margin-bottom: 20px;
 }
@@ -262,7 +268,8 @@ tr:hover td {
     display: none;
   }
   
-  .grid-layout {
+  .grid-layout,
+  .pitch-counts-layout {
     grid-template-columns: 1fr;
   }
   

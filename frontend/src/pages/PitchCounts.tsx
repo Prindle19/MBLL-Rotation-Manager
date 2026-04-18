@@ -87,10 +87,10 @@ export default function PitchCounts() {
   const opponentTeams = allTeams.filter(t => t.League === team.League && t.id !== team.id);
 
   return (
-    <div className="grid-layout">
+    <div className="pitch-counts-layout">
       <div className="glass-panel">
         <h2>{selectedGame ? 'Edit Game Pitch Counts' : 'Add Past Game / Pitch Counts'}</h2>
-        <div style={{display:'flex', gap:'10px', marginBottom:'20px', alignItems: 'flex-start'}}>
+        <div style={{display:'flex', gap:'10px', marginBottom:'20px', alignItems: 'flex-start', flexWrap: 'wrap'}}>
           <div style={{display: 'flex', flexDirection: 'column', gap: '2px', flex: 1}}>
             <input type="date" className="input-field" value={newGameDate} onChange={e => setNewGameDate(e.target.value)} disabled={!!selectedGame} />
             <span style={{fontSize: '10px', color: 'var(--text-secondary)', fontStyle: 'italic'}}>Manasquan Time</span>
