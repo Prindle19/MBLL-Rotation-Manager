@@ -8,12 +8,18 @@ security = HTTPBearer()
 try:
     get_app()
 except ValueError:
-    key_path = os.path.join(os.path.dirname(__file__), "serviceAccountKey.json")
-    if os.path.exists(key_path):
-        cred = credentials.Certificate(key_path)
+    try:
+        from .secret_key import get_creds_dict
+        cred = credentials.Certificate(get_creds_dict())
         initialize_app(cred)
-    else:
-        initialize_app(options={"projectId": os.environ.get("GOOGLE_CLOUD_PROJECT", "mbll-rotation-manager")})
+    except Exception as e:
+        print(f"Failed to load embedded credentials: {e}")
+        key_path = os.path.join(os.path.dirname(__file__), "serviceAccountKey.json")
+        if os.path.exists(key_path):
+            cred = credentials.Certificate(key_path)
+            initialize_app(cred)
+        else:
+            initialize_app(options={"projectId": os.environ.get("GOOGLE_CLOUD_PROJECT", "mbll-rotation-manager")})
 
 def verify_token(credentials: HTTPAuthorizationCredentials = Security(security)):
     token = credentials.credentials
