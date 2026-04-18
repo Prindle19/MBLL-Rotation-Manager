@@ -13,7 +13,17 @@ export default function GameSetup() {
   // Game metadata
   const [allTeams, setAllTeams] = useState<any[]>([]);
   const [pastGames, setPastGames] = useState<any[]>([]);
-  const [gameDate, setGameDate] = useState(new Date().toISOString().split('T')[0]);
+
+  const getManasquanDate = () => {
+    return new Intl.DateTimeFormat('en-CA', { 
+      timeZone: 'America/New_York',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).format(new Date());
+  };
+
+  const [gameDate, setGameDate] = useState(getManasquanDate());
   const [opponent, setOpponent] = useState('');
   const [isHome, setIsHome] = useState(true);
   
@@ -252,7 +262,10 @@ export default function GameSetup() {
       {/* Matchup Header */}
       <div className="glass-panel" style={{display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap'}}>
         <h3 style={{margin: 0, marginRight: 'auto'}}>Game Matchup</h3>
-        <input type="date" className="input-field" style={{width: 'auto'}} value={gameDate} onChange={e => setGameDate(e.target.value)} />
+        <div style={{display: 'flex', flexDirection: 'column', gap: '2px'}}>
+          <input type="date" className="input-field" style={{width: 'auto'}} value={gameDate} onChange={e => setGameDate(e.target.value)} />
+          <span style={{fontSize: '10px', color: 'var(--text-secondary)', fontStyle: 'italic'}}>Manasquan Time</span>
+        </div>
         <select className="select-field" style={{width: 'auto'}} value={isHome ? 'home' : 'away'} onChange={e => setIsHome(e.target.value === 'home')}>
           <option value="home">Home</option>
           <option value="away">Away</option>

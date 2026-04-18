@@ -6,7 +6,17 @@ export default function PitchCounts() {
   const { selectedTeam: team } = useAuth();
   const [games, setGames] = useState<any[]>([]);
   const [roster, setRoster] = useState<any[]>([]);
-  const [newGameDate, setNewGameDate] = useState('');
+
+  const getManasquanDate = () => {
+    return new Intl.DateTimeFormat('en-CA', { 
+      timeZone: 'America/New_York',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).format(new Date());
+  };
+
+  const [newGameDate, setNewGameDate] = useState(getManasquanDate());
   const [pitchCounts, setPitchCounts] = useState<Record<string, number>>({});
   
   useEffect(() => {
@@ -57,8 +67,11 @@ export default function PitchCounts() {
       <div className="glass-panel">
         <h2>Add Past Game / Pitch Counts</h2>
         <div style={{display:'flex', gap:'10px', marginBottom:'20px'}}>
-          <input type="date" className="input-field" value={newGameDate} onChange={e => setNewGameDate(e.target.value)} />
-          <button className="btn" onClick={savePastGame}>Save Record</button>
+          <div style={{display: 'flex', flexDirection: 'column', gap: '2px'}}>
+            <input type="date" className="input-field" value={newGameDate} onChange={e => setNewGameDate(e.target.value)} />
+            <span style={{fontSize: '10px', color: 'var(--text-secondary)', fontStyle: 'italic'}}>Manasquan Time</span>
+          </div>
+          <button className="btn" onClick={savePastGame} style={{height: '38px'}}>Save Record</button>
         </div>
 
         <div style={{maxHeight: '400px', overflowY: 'auto'}}>
