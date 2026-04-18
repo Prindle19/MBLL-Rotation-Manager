@@ -65,6 +65,19 @@ def require_coach_or_admin(user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=403, detail="Coach access required")
     return user
 
+@app.get("/api/test_db")
+def test_db():
+    try:
+        if db is None:
+            return {"status": "error", "message": "db is None! firestore.client() failed during app startup."}
+        
+        # Test a simple query to check permissions
+        list(db.collection("users").limit(1).stream())
+        return {"status": "success", "message": "Firestore connected and permissions are valid!"}
+    except Exception as e:
+        import traceback
+        return {"status": "exception", "message": str(e), "traceback": traceback.format_exc()}
+
 @app.get("/api/auth/me")
 def get_me(user: dict = Depends(get_current_user)):
     try:
