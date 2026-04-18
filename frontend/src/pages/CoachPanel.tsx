@@ -44,13 +44,6 @@ export default function CoachPanel() {
     setRoster(roster.filter(p => p.id !== id));
   };
 
-  const saveRoster = async () => {
-    if (team) {
-      await api.post(`/api/roster/${team.id}`, { players: roster });
-      alert("Roster Saved to Database!");
-    }
-  };
-
   if (!team) return <div className="glass-panel" style={{textAlign: 'center', padding: '50px'}}>You have not been assigned a team yet. Please contact an admin.</div>;
 
   return (

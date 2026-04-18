@@ -8,7 +8,6 @@ export default function GameSetup() {
   const { selectedTeam: team } = useAuth();
   
   // Roster and setup state
-  const [roster, setRoster] = useState<any[]>([]);
   const [activePlayers, setActivePlayers] = useState<any[]>([]); // order matters
   
   // Game metadata
@@ -73,7 +72,6 @@ export default function GameSetup() {
           }
         }
         
-        setRoster(r);
         setActivePlayers(r);
       }).catch(err => {
         console.error("Failed to load setup data", err);
