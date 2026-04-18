@@ -95,7 +95,15 @@ export default function GameSetup() {
   // Load game from PastGames route
   useEffect(() => {
     if (location.state?.gameToLoad) {
-      loadGame(location.state.gameToLoad);
+      const game = location.state.gameToLoad;
+      setGameDate(game.date);
+      setOpponent(game.opponent);
+      setIsHome(game.isHome);
+      setActivePlayers(game.activePlayers || []);
+      setLocks(game.locks || {});
+      setRotation(game.rotation || []);
+      setValidationMsg(`✅ Loaded game from ${game.date}`);
+      
       // Clear the state so it doesn't reload if the user navigates away and back
       window.history.replaceState({}, document.title)
     }
@@ -304,26 +312,6 @@ export default function GameSetup() {
     }
   };
 
-  const loadGame = (game: any) => {
-    setGameDate(game.date);
-    setOpponent(game.opponent);
-    setIsHome(game.isHome);
-    setActivePlayers(game.activePlayers || []);
-    setLocks(game.locks || {});
-    setRotation(game.rotation || []);
-    setValidationMsg(`✅ Loaded game from ${game.date}`);
-  };
-
-  const deleteGame = async (gameId: string) => {
-    if (!window.confirm("Are you sure you want to delete this game? This will remove it from pitch counts and history.")) return;
-    try {
-      await api.delete(`/api/games/${gameId}`);
-      setPastGames(pastGames.filter(g => g.id !== gameId));
-      setValidationMsg(`✅ Game deleted successfully.`);
-    } catch (err) {
-      setValidationMsg(`❌ ERROR: Failed to delete game.`);
-    }
-  };
 
   if (!team) return <div className="glass-panel" style={{textAlign: 'center', padding: '50px'}}>You need an Admin to assign you to a Team before setting up a game.</div>;
 
