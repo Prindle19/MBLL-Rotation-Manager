@@ -25,26 +25,34 @@ app.add_middleware(
 )
 
 def get_current_user(token: dict = Depends(verify_token)):
-    email = token.get("email")
-    if not email:
-        raise HTTPException(status_code=400, detail="No email found in token")
-    
-    user_ref = db.collection("users").document(email)
-    user_doc = user_ref.get()
-    
-    if not user_doc.exists:
-        users = list(db.collection("users").limit(1).stream())
-        role = "admin" if not users else "pending"
+    try:
+        email = token.get("email")
+        if not email:
+            raise HTTPException(status_code=400, detail="No email found in token")
+        
+        if db is None:
+            raise Exception("Firestore database client (db) is None. Initialization failed.")
             
-        new_user = {
-            "email": email,
-            "role": role,
-            "name": token.get("name", ""),
-        }
-        user_ref.set(new_user)
-        return new_user
-    
-    return user_doc.to_dict()
+        user_ref = db.collection("users").document(email)
+        user_doc = user_ref.get()
+        
+        if not user_doc.exists:
+            users = list(db.collection("users").limit(1).stream())
+            role = "admin" if not users else "pending"
+                
+            new_user = {
+                "email": email,
+                "role": role,
+                "name": token.get("name", ""),
+            }
+            user_ref.set(new_user)
+            return new_user
+        
+        return user_doc.to_dict()
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"get_current_user error: {str(e)}")
 
 def require_admin(user: dict = Depends(get_current_user)):
     if user.get("role") != "admin":
@@ -59,13 +67,20 @@ def require_coach_or_admin(user: dict = Depends(get_current_user)):
 
 @app.get("/api/auth/me")
 def get_me(user: dict = Depends(get_current_user)):
-    assigned_teams = []
-    if user.get("role") in ["coach", "admin"]:
-        teams_ref = db.collection("teams").where(filter=FieldFilter("coachEmails", "array_contains", user["email"])).stream()
-        for t in teams_ref:
-            assigned_teams.append({**t.to_dict(), "id": t.id})
-            
-    return {"user": user, "teams": assigned_teams}
+    try:
+        assigned_teams = []
+        if user.get("role") in ["coach", "admin"]:
+            if db is None:
+                raise Exception("Firestore database client (db) is None.")
+            teams_ref = db.collection("teams").where(filter=FieldFilter("coachEmails", "array_contains", user["email"])).stream()
+            for t in teams_ref:
+                assigned_teams.append({**t.to_dict(), "id": t.id})
+                
+        return {"user": user, "teams": assigned_teams}
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"get_me error: {str(e)}")
 
 @app.get("/api/users")
 def get_users(admin: dict = Depends(require_admin)):
