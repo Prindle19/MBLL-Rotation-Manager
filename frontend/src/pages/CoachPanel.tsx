@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { api } from '../api';
 import { useAuth } from '../context/AuthContext';
+import { StarRating } from '../components/StarRating';
 
 export default function CoachPanel() {
   const { selectedTeam: team } = useAuth();
@@ -53,20 +54,29 @@ export default function CoachPanel() {
         <span style={{color: saveStatus === 'Error saving' ? '#ef4444' : 'var(--text-secondary)', fontSize: '14px', fontStyle: 'italic'}}>{saveStatus}</span>
       </div>
       
-      <div style={{display:'flex', gap:'10px', alignItems: 'flex-end', marginBottom:'20px'}}>
-        <div style={{display: 'flex', flexDirection: 'column', gap: '4px', flex: 1}}>
+      <div style={{display:'flex', gap:'10px', alignItems: 'flex-end', marginBottom:'20px', flexWrap: 'wrap'}}>
+        <div style={{display: 'flex', flexDirection: 'column', gap: '4px', flex: 1, minWidth: '150px'}}>
           <label style={{fontSize: '12px', color: 'var(--text-secondary)'}}>Player Name</label>
           <input className="input-field" placeholder="Enter name" value={newPlayer.name} onChange={e => setNewPlayer({...newPlayer, name: e.target.value})} />
         </div>
         <div style={{display: 'flex', flexDirection: 'column', gap: '4px'}}>
           <label style={{fontSize: '12px', color: 'var(--text-secondary)'}}>Age</label>
-          <input type="number" className="input-field" value={newPlayer.leagueAge} onChange={e => setNewPlayer({...newPlayer, leagueAge: parseInt(e.target.value)})} style={{width:'80px'}} />
+          <input type="number" className="input-field" value={newPlayer.leagueAge} onChange={e => setNewPlayer({...newPlayer, leagueAge: parseInt(e.target.value)})} style={{width:'60px'}} />
+        </div>
+        <div style={{display: 'flex', flexDirection: 'column', gap: '4px', paddingBottom: '12px'}}>
+          <label style={{fontSize: '12px', color: 'var(--text-secondary)'}}>IF Skill</label>
+          <StarRating value={newPlayer.skillInfield} onChange={val => setNewPlayer({...newPlayer, skillInfield: val})} />
+        </div>
+        <div style={{display: 'flex', flexDirection: 'column', gap: '4px', paddingBottom: '12px'}}>
+          <label style={{fontSize: '12px', color: 'var(--text-secondary)'}}>OF Skill</label>
+          <StarRating value={newPlayer.skillOutfield} onChange={val => setNewPlayer({...newPlayer, skillOutfield: val})} />
         </div>
         <button className="btn" style={{height: '46px'}} onClick={addPlayer}>Add</button>
       </div>
 
-      <table>
-        <thead><tr><th>Name</th><th>Age</th><th>IF Skill</th><th>OF Skill</th><th>Action</th></tr></thead>
+      <div className="table-container">
+        <table>
+          <thead><tr><th>Name</th><th>Age</th><th>IF Skill</th><th>OF Skill</th><th>Action</th></tr></thead>
         <tbody>
           {roster.map(p => (
             <tr key={p.id}>
@@ -80,17 +90,24 @@ export default function CoachPanel() {
                   setRoster(roster.map(r => r.id === p.id ? {...r, leagueAge: parseInt(e.target.value) || 0} : r));
                 }} style={{width:'60px', padding: '8px'}}/>
               </td>
-              <td><input type="number" min="1" max="5" className="input-field" value={p.skillInfield} onChange={(e) => {
-                setRoster(roster.map(r => r.id === p.id ? {...r, skillInfield: parseInt(e.target.value)} : r));
-              }} style={{width:'80px'}}/></td>
-              <td><input type="number" min="1" max="5" className="input-field" value={p.skillOutfield} onChange={(e) => {
-                setRoster(roster.map(r => r.id === p.id ? {...r, skillOutfield: parseInt(e.target.value)} : r));
-              }} style={{width:'80px'}}/></td>
+              <td>
+                <StarRating 
+                  value={p.skillInfield} 
+                  onChange={(val) => setRoster(roster.map(r => r.id === p.id ? {...r, skillInfield: val} : r))} 
+                />
+              </td>
+              <td>
+                <StarRating 
+                  value={p.skillOutfield} 
+                  onChange={(val) => setRoster(roster.map(r => r.id === p.id ? {...r, skillOutfield: val} : r))} 
+                />
+              </td>
               <td><button className="btn btn-danger" onClick={() => removePlayer(p.id)}>Remove</button></td>
             </tr>
-          ))}
-        </tbody>
-      </table>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Depends, HTTPException, Body
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from firebase_admin import firestore
 from .firebase_auth import verify_token
 from .logic import solve_rotation
@@ -106,6 +107,11 @@ def update_user_role(email: str, role_data: dict = Body(...), admin: dict = Depe
     if role not in ["admin", "coach", "pending"]:
         raise HTTPException(status_code=400, detail="Invalid role")
     db.collection("users").document(email).update({"role": role})
+    return {"success": True}
+
+@app.delete("/api/users/{email}")
+def delete_user(email: str, admin: dict = Depends(require_admin)):
+    db.collection("users").document(email).delete()
     return {"success": True}
 
 @app.get("/api/teams")
@@ -216,5 +222,28 @@ def save_game(game_data: dict = Body(...), user: dict = Depends(require_coach_or
     db.collection("games").document(doc_id).set(game_data)
     return {"success": True, "id": doc_id}
 
+@app.delete("/api/games/{game_id}")
+def delete_game(game_id: str, user: dict = Depends(require_coach_or_admin)):
+    try:
+        # Just delete it directly; require_coach_or_admin ensures they are logged in as a coach
+        db.collection("games").document(game_id).delete()
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 if os.path.isdir("frontend/dist"):
-    app.mount("/", StaticFiles(directory="frontend/dist", html=True), name="frontend")
+    @app.get("/{full_path:path}")
+    async def serve_frontend(full_path: str):
+        if full_path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="Not Found")
+            
+        file_path = os.path.join("frontend/dist", full_path)
+        if os.path.abspath(file_path).startswith(os.path.abspath("frontend/dist")):
+            if os.path.isfile(file_path):
+                return FileResponse(file_path)
+                
+        index_path = os.path.join("frontend/dist", "index.html")
+        if os.path.isfile(index_path):
+            return FileResponse(index_path)
+            
+        raise HTTPException(status_code=404, detail="Not Found")

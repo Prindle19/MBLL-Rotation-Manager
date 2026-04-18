@@ -31,6 +31,13 @@ export default function AdminPanel() {
     fetchData();
   };
 
+  const deleteUser = async (email: string) => {
+    if (window.confirm(`Are you sure you want to delete user ${email}?`)) {
+      await api.delete(`/api/users/${email}`);
+      fetchData();
+    }
+  };
+
   const createOrUpdateTeam = async () => {
     if (editingTeamId) {
       await api.put(`/api/teams/${editingTeamId}`, newTeam);
@@ -73,11 +80,14 @@ export default function AdminPanel() {
                   <td>{u.name}</td>
                   <td>{u.role}</td>
                   <td>
-                    <select value={u.role} onChange={(e) => updateRole(u.email, e.target.value)} className="select-field" style={{width:'auto', padding:'5px'}}>
-                      <option value="pending">Pending</option>
-                      <option value="coach">Coach</option>
-                      <option value="admin">Admin</option>
-                    </select>
+                    <div style={{display:'flex', gap:'8px', alignItems:'center'}}>
+                      <select value={u.role} onChange={(e) => updateRole(u.email, e.target.value)} className="select-field" style={{width:'auto', padding:'5px'}}>
+                        <option value="pending">Pending</option>
+                        <option value="coach">Coach</option>
+                        <option value="admin">Admin</option>
+                      </select>
+                      <button className="btn btn-danger" style={{padding:'4px 8px', fontSize:'12px'}} onClick={() => deleteUser(u.email)}>Delete</button>
+                    </div>
                   </td>
                 </tr>
               ))}

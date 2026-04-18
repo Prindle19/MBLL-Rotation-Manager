@@ -5,6 +5,7 @@ import AdminPanel from './pages/AdminPanel';
 import CoachPanel from './pages/CoachPanel';
 import GameSetup from './pages/GameSetup';
 import PitchCounts from './pages/PitchCounts';
+import PastGames from './pages/PastGames';
 import { LogOut } from 'lucide-react';
 import './index.css';
 
@@ -46,10 +47,14 @@ function AppContent() {
       <div className="app-container">
         <nav className="nav-bar">
           <div className="brand" style={{display:'flex', gap:'30px', alignItems:'center'}}>
-            ⚾ MBLL Rotation Manager
+            <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ WebkitTextFillColor: 'initial' }}>⚾</span> 
+              MBLL Rotation Manager
+            </span>
             <div className="nav-links">
               <Link to="/game" style={{color:'var(--text-primary)', textDecoration:'none'}}>Game Setup</Link>
               <Link to="/coach" style={{color:'var(--text-primary)', textDecoration:'none'}}>My Roster</Link>
+              <Link to="/past-games" style={{color:'var(--text-primary)', textDecoration:'none'}}>Past Games</Link>
               <Link to="/pitch-counts" style={{color:'var(--text-primary)', textDecoration:'none'}}>Pitch Counts</Link>
               {dbUser.role === 'admin' && <Link to="/admin" style={{color:'var(--accent)', textDecoration:'none'}}>League Admin</Link>}
             </div>
@@ -80,6 +85,7 @@ function AppContent() {
           <Route path="/" element={<Navigate to={dbUser?.role === 'admin' && teams.length === 0 ? '/admin' : '/game'} />} />
           <Route path="/game" element={<GameSetup />} />
           <Route path="/coach" element={<CoachPanel />} />
+          <Route path="/past-games" element={<PastGames />} />
           <Route path="/pitch-counts" element={<PitchCounts />} />
           <Route path="/admin" element={dbUser?.role === 'admin' ? <AdminPanel /> : <Navigate to="/" />} />
         </Routes>

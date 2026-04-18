@@ -1,11 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { Play, GripVertical, Check, X, UserPlus, AlertCircle } from 'lucide-react';
 import { api } from '../api';
 import { useAuth } from '../context/AuthContext';
+import { StarRating } from '../components/StarRating';
 
 export default function GameSetup() {
   const { selectedTeam: team } = useAuth();
+  const location = useLocation();
   
   // Roster and setup state
   const [activePlayers, setActivePlayers] = useState<any[]>([]); // order matters
@@ -89,6 +92,15 @@ export default function GameSetup() {
     }
   }, [team]);
 
+  // Load game from PastGames route
+  useEffect(() => {
+    if (location.state?.gameToLoad) {
+      loadGame(location.state.gameToLoad);
+      // Clear the state so it doesn't reload if the user navigates away and back
+      window.history.replaceState({}, document.title)
+    }
+  }, [location.state]);
+
   // Recalculate pitch count eligibility
   useEffect(() => {
     if (!team || pastGames.length === 0) return;
@@ -128,6 +140,14 @@ export default function GameSetup() {
     });
     setPitchWarnings(warnings);
   }, [gameDate, pastGames, activePlayers, team]);
+
+  const prevActiveRef = useRef(activePlayers);
+  useEffect(() => {
+    if (rotation.length > 0 && prevActiveRef.current !== activePlayers) {
+      generateRotation();
+    }
+    prevActiveRef.current = activePlayers;
+  }, [activePlayers]);
 
   const onDragEnd = (result: DropResult) => {
     if (!result.destination) return;
@@ -176,12 +196,64 @@ export default function GameSetup() {
       const pos = locks[playerId]?.[i] || rotation.find(r => r.id === playerId)?.[i.toString()];
       if (pos === 'P') pCount++;
     }
-    return pCount * (team?.League === 'Majors' ? 15 : 20);
+    return pCount * 15;
   };
 
   const generateRotation = async () => {
     setGenerating(true);
     setValidationMsg('');
+
+    // Check if Pitcher and Catcher are locked for all 6 innings
+    const isBatterySet = [1, 2, 3, 4, 5, 6].every(inn => {
+      let hasP = false;
+      let hasC = false;
+      Object.values(locks).forEach(playerLocks => {
+        if (playerLocks[inn] === 'P') hasP = true;
+        if (playerLocks[inn] === 'C') hasC = true;
+      });
+      return hasP && hasC;
+    });
+
+    if (!isBatterySet) {
+      setValidationMsg('❌ ERROR: Please lock a Pitcher (P) and Catcher (C) for all 6 innings before generating.');
+      setGenerating(false);
+      return;
+    }
+
+    // Mathematical validation: Prevent locks that make it impossible to fulfill positional requirements
+    for (const player of activePlayers) {
+      if (!player.isActive || player.id.startsWith("sub_")) continue;
+      
+      let lockedIF = 0;
+      let lockedOF = 0;
+      let openSlots = 6;
+      
+      const pLocks = locks[player.id] || {};
+      for (let i = 1; i <= 6; i++) {
+        const pos = pLocks[i];
+        if (pos) {
+          openSlots--;
+          if (['P', 'C', '1B', '2B', '3B', 'SS'].includes(pos)) lockedIF++;
+          else if (['LF', 'LC', 'RC', 'RF', 'CF'].includes(pos)) lockedOF++;
+        }
+      }
+      
+      const minOF = 1;
+      const minIF = team?.League === 'Minors' ? 2 : 0;
+      
+      if (lockedOF + openSlots < minOF) {
+        setValidationMsg(`❌ ERROR: ${player.name} has too many locked innings to fulfill the minimum Outfield requirement (${minOF} inn). Please remove some locks.`);
+        setGenerating(false);
+        return;
+      }
+      
+      if (lockedIF + openSlots < minIF) {
+        setValidationMsg(`❌ ERROR: ${player.name} has too many locked innings to fulfill the minimum Infield requirement (${minIF} inn). Please remove some locks.`);
+        setGenerating(false);
+        return;
+      }
+    }
+
     try {
       const skillsMap: Record<string, any> = {};
       activePlayers.forEach(p => {
@@ -232,6 +304,27 @@ export default function GameSetup() {
     }
   };
 
+  const loadGame = (game: any) => {
+    setGameDate(game.date);
+    setOpponent(game.opponent);
+    setIsHome(game.isHome);
+    setActivePlayers(game.activePlayers || []);
+    setLocks(game.locks || {});
+    setRotation(game.rotation || []);
+    setValidationMsg(`✅ Loaded game from ${game.date}`);
+  };
+
+  const deleteGame = async (gameId: string) => {
+    if (!window.confirm("Are you sure you want to delete this game? This will remove it from pitch counts and history.")) return;
+    try {
+      await api.delete(`/api/games/${gameId}`);
+      setPastGames(pastGames.filter(g => g.id !== gameId));
+      setValidationMsg(`✅ Game deleted successfully.`);
+    } catch (err) {
+      setValidationMsg(`❌ ERROR: Failed to delete game.`);
+    }
+  };
+
   if (!team) return <div className="glass-panel" style={{textAlign: 'center', padding: '50px'}}>You need an Admin to assign you to a Team before setting up a game.</div>;
 
   const positions = team.League === 'Minors' 
@@ -241,27 +334,65 @@ export default function GameSetup() {
     : ['P', 'C', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF', 'Bench'];
 
   const opponentTeams = allTeams.filter(t => t.League === team.League && t.id !== team.id);
+  const opponentName = opponentTeams.find(t => t.id === opponent)?.Team_Name || 'TBD';
+  const matchTitle = isHome ? `${opponentName} @ ${team.Team_Name}` : `${team.Team_Name} @ ${opponentName}`;
 
   return (
-    <div style={{display: 'flex', flexDirection: 'column', gap: '24px'}}>
-      
-      {/* Validation HUD */}
-      {validationMsg && (
-        <div style={{
-          background: validationMsg.startsWith('❌') ? 'rgba(239, 68, 68, 0.2)' : 'rgba(16, 185, 129, 0.2)',
-          border: `1px solid ${validationMsg.startsWith('❌') ? '#ef4444' : '#10b981'}`,
-          padding: '12px 24px',
-          borderRadius: '8px',
-          color: 'white',
-          fontWeight: '500'
-        }}>
-          {validationMsg}
+    <>
+      {/* Printable Dugout Chart */}
+      <div className="print-only" style={{ padding: '20px' }}>
+        <div style={{ marginBottom: '16px' }}>
+          <h1 style={{ margin: 0, color: 'black', fontSize: '24px' }}>MBLL {team.League} Dugout Chart - {gameDate} | {matchTitle}</h1>
         </div>
-      )}
+        <div style={{ display: 'flex', gap: '40px' }}>
+          <div style={{ flex: '0 0 auto', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+            <div>
+              <h2 style={{ borderBottom: '2px solid black', paddingBottom: '8px', color: 'black', margin: '0 0 12px 0', fontSize: '20px' }}>Batting Order</h2>
+              <ol style={{ fontSize: '16px', lineHeight: '1.6', margin: 0, paddingLeft: '24px', color: 'black', whiteSpace: 'nowrap' }}>
+                {activePlayers.filter(p => p.isActive).map((p) => (
+                  <li key={p.id}>{p.name}</li>
+                ))}
+              </ol>
+            </div>
+            <div>
+              <img src="/StreamSplitterLogo.png" alt="StreamSplitter" style={{width: '160px', height: 'auto'}} />
+            </div>
+          </div>
+          <div style={{ flex: 1 }}>
+            <h2 style={{ borderBottom: '2px solid black', paddingBottom: '8px', color: 'black', margin: '0 0 12px 0', fontSize: '20px' }}>Defensive Rotation</h2>
+            <table className="print-table" style={{ width: '100%', borderCollapse: 'collapse', color: 'black', fontSize: '14px' }}>
+              <thead>
+                <tr>
+                  <th style={{ border: '1px solid black', padding: '8px', textAlign: 'left' }}>Player</th>
+                  {[1,2,3,4,5,6].map(i => <th key={i} style={{ border: '1px solid black', padding: '8px', textAlign: 'center' }}>{i}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {activePlayers.filter(p => p.isActive).map(p => {
+                  const row = rotation.find(r => r.id === p.id) || {};
+                  return (
+                    <tr key={p.id}>
+                      <td style={{ border: '1px solid black', padding: '8px', textAlign: 'left' }}><strong>{p.name}</strong></td>
+                      {[1,2,3,4,5,6].map(i => (
+                        <td key={i} style={{ border: '1px solid black', padding: '8px', textAlign: 'center' }}>
+                          {locks[p.id]?.[i] || row[i.toString()] || '-'}
+                        </td>
+                      ))}
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div className="no-print" style={{display: 'flex', flexDirection: 'column', gap: '24px'}}>
+      
 
       {/* Matchup Header */}
       <div className="glass-panel" style={{display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap'}}>
-        <h3 style={{margin: 0, marginRight: 'auto'}}>Game Matchup</h3>
+        <h3 style={{margin: 0, marginRight: 'auto'}}>Game Matchup{opponent ? `: ${matchTitle}` : ''}</h3>
         <div style={{display: 'flex', flexDirection: 'column', gap: '2px'}}>
           <input type="date" className="input-field" style={{width: 'auto'}} value={gameDate} onChange={e => setGameDate(e.target.value)} />
           <span style={{fontSize: '10px', color: 'var(--text-secondary)', fontStyle: 'italic'}}>Manasquan Time</span>
@@ -301,11 +432,14 @@ export default function GameSetup() {
                             boxShadow: snapshot.isDragging ? '0 10px 20px rgba(0,0,0,0.2)' : 'none',
                           }}
                         >
-                          <div {...provided.dragHandleProps} style={{cursor: 'grab', display: 'flex', alignItems: 'center'}}>
-                            <GripVertical size={16} color="var(--text-secondary)" />
+                          <div {...provided.dragHandleProps} style={{cursor: 'grab', display: 'flex', alignItems: 'center', padding: '16px 12px', margin: '-16px 0 -16px -16px', touchAction: 'none'}}>
+                            <GripVertical size={24} color="var(--text-secondary)" />
                           </div>
                           <div style={{flex: 1, display: 'flex', flexDirection: 'column'}}>
-                            <span style={{textDecoration: player.isActive ? 'none' : 'line-through'}}>{index + 1}. {player.name}</span>
+                            <div style={{display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap'}}>
+                              <span style={{textDecoration: player.isActive ? 'none' : 'line-through', fontWeight: '500'}}>{index + 1}. {player.name}</span>
+
+                            </div>
                             {pitchWarnings[player.id] && player.isActive && (
                               <span style={{fontSize: '11px', color: '#ef4444', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px'}}>
                                 <AlertCircle size={12}/> {pitchWarnings[player.id]}
@@ -347,24 +481,30 @@ export default function GameSetup() {
             <button className="btn" onClick={addTemporarySub}><UserPlus size={16}/></button>
           </div>
 
-          <button 
-            className="btn" 
-            style={{ width: '100%', marginTop: '24px', justifyContent: 'center' }}
-            onClick={generateRotation}
-            disabled={generating || activeCount === 0}
-          >
-            {generating ? <div className="spinner" style={{width: '20px', height: '20px', borderWidth: '2px'}}></div> : <><Play size={16} /> Generate Rotation</>}
-          </button>
+
         </div>
 
         <div className="glass-panel">
           <h2>Defensive Rotation & Locks</h2>
+          <p style={{color: 'var(--text-secondary)', fontSize: '14px', marginBottom: '16px', lineHeight: '1.5'}}>
+            ⚠️ <strong>Required:</strong> You must explicitly lock your Pitchers (P) and Catchers (C) for all 6 innings. 
+            The generator will not automatically assign these unique positions.
+          </p>
           <div className="table-container">
             <table>
               <thead>
                 <tr>
                   <th>Player</th>
-                  {[1,2,3,4,5,6].map(i => <th key={i}>Inn {i}</th>)}
+                  {[1,2,3,4,5,6].map(i => {
+                    let hasP = false;
+                    let hasC = false;
+                    Object.values(locks).forEach(playerLocks => {
+                      if (playerLocks[i] === 'P') hasP = true;
+                      if (playerLocks[i] === 'C') hasC = true;
+                    });
+                    const isMissingBattery = !(hasP && hasC);
+                    return <th key={i} style={{textAlign: 'center', color: isMissingBattery ? '#ef4444' : 'var(--text-secondary)'}}>{i}</th>
+                  })}
                 </tr>
               </thead>
               <tbody>
@@ -372,19 +512,34 @@ export default function GameSetup() {
                   const row = rotation.find(r => r.id === p.id) || {};
                   return (
                     <tr key={p.id}>
-                      <td style={{fontSize: '14px', whiteSpace: 'nowrap'}}><strong>{p.name}</strong></td>
-                      {[1,2,3,4,5,6].map(i => (
-                        <td key={i}>
+                      <td style={{fontSize: '14px', whiteSpace: 'nowrap'}}>
+                        <div style={{display: 'flex', flexDirection: 'column', gap: '2px'}}>
+                          <strong>{p.name}</strong>
+                          <div style={{display: 'flex', gap: '4px', fontSize: '9px', color: 'var(--text-secondary)'}}>
+                            <span style={{display: 'flex', alignItems: 'center', gap: '1px'}}>IF <StarRating value={p.skillInfield || 3} readonly size={8} /></span>
+                            <span style={{display: 'flex', alignItems: 'center', gap: '1px'}}>OF <StarRating value={p.skillOutfield || 3} readonly size={8} /></span>
+                          </div>
+                        </div>
+                      </td>
+                      {[1,2,3,4,5,6].map(i => {
+                        const currentVal = locks[p.id]?.[i] || row[i.toString()] || '';
+                        const isAlgo = !locks[p.id]?.[i] && !!row[i.toString()];
+                        const isHighIF = ['1B', '2B', '3B', 'SS'].includes(currentVal) && (p.skillInfield >= 4);
+                        const shouldGlow = isAlgo && isHighIF;
+                        
+                        return (
+                        <td key={i} align="center">
                           <select 
                             className="select-field" 
                             style={{
                               width: '70px', 
                               padding: '4px', 
                               fontSize: '12px',
-                              border: locks[p.id]?.[i] ? '1px solid var(--accent)' : '1px solid var(--border-color)',
-                              background: locks[p.id]?.[i] ? 'rgba(59, 130, 246, 0.2)' : 'transparent'
+                              border: locks[p.id]?.[i] ? '1px solid var(--accent)' : (shouldGlow ? '1px solid rgba(251, 191, 36, 0.8)' : '1px solid var(--border-color)'),
+                              background: locks[p.id]?.[i] ? 'rgba(59, 130, 246, 0.2)' : 'transparent',
+                              boxShadow: shouldGlow ? '0 0 10px rgba(251, 191, 36, 0.3), inset 0 0 4px rgba(251, 191, 36, 0.2)' : 'none'
                             }}
-                            value={locks[p.id]?.[i] || row[i.toString()] || ''}
+                            value={currentVal}
                             onChange={(e) => updateLock(p.id, i.toString(), e.target.value)}
                           >
                             <option value="">--</option>
@@ -399,15 +554,58 @@ export default function GameSetup() {
                             ))}
                           </select>
                         </td>
-                      ))}
+                        );
+                      })}
                     </tr>
                   )
                 })}
               </tbody>
             </table>
           </div>
+
+          <div style={{ marginTop: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {validationMsg && (
+              <div style={{
+                background: validationMsg.startsWith('❌') ? 'rgba(239, 68, 68, 0.2)' : 'rgba(16, 185, 129, 0.2)',
+                border: `1px solid ${validationMsg.startsWith('❌') ? '#ef4444' : '#10b981'}`,
+                padding: '12px 24px',
+                borderRadius: '8px',
+                color: 'white',
+                fontWeight: '500'
+              }}>
+                {validationMsg}
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: '16px' }}>
+              <button 
+                className="btn" 
+                style={{ flex: 1, justifyContent: 'center' }}
+                onClick={generateRotation}
+                disabled={generating || activeCount === 0}
+              >
+                {generating ? <div className="spinner" style={{width: '20px', height: '20px', borderWidth: '2px'}}></div> : <><Play size={16} /> Generate Rotation</>}
+              </button>
+              
+              {rotation.length > 0 && (
+                <button 
+                  className="btn" 
+                  style={{ flex: 1, justifyContent: 'center', background: 'var(--panel-bg)', border: '1px solid var(--border-color)' }}
+                  onClick={() => window.print()}
+                >
+                  🖨️ Print Dugout Chart
+                </button>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '30px' }}>
+              <img src="/StreamSplitterLogo.png" alt="StreamSplitter" style={{height: '60px'}} />
+            </div>
+            
+          </div>
         </div>
       </div>
+
     </div>
+    </>
   );
 }

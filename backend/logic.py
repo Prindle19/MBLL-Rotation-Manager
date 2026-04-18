@@ -51,10 +51,51 @@ def solve_rotation(active_players, league, locks, skills, pitcher_name=None, pro
                 if pos in available_slots:
                     available_slots.remove(pos)
                     
+        # Do not allow the random solver to assign Pitcher or Catcher
+        if 'P' in available_slots:
+            available_slots.remove('P')
+        if 'C' in available_slots:
+            available_slots.remove('C')
+                    
         unassigned_players = [p for p in active_players if pd.isna(grid.at[p, inn])]
         
-        # Sort unassigned randomly
+        # Determine who was benched last inning
+        benched_last = set()
+        if inn > 1:
+            for p in unassigned_players:
+                prev_pos = grid.at[p, inn - 1]
+                if pd.isna(prev_pos) or prev_pos == "Bench":
+                    benched_last.add(p)
+                    
+        def get_urgency(p):
+            open_slots = sum(1 for i in range(inn, 7) if pd.isna(grid.at[p, i]))
+            needs_of_flag = of_counts[p] < 1 and not str(p).startswith("sub_")
+            needs_if_flag = (if_counts[p] < 2 if league == "Minors" else False) and not str(p).startswith("sub_")
+            
+            reqs_needed = 0
+            if needs_of_flag: reqs_needed += 1
+            if needs_if_flag: reqs_needed += 1
+            
+            urgency = 0
+            
+            # Crisis Mode: They have exactly enough (or fewer) open slots to meet their needs. 
+            # They MUST go first.
+            if reqs_needed > 0 and reqs_needed >= open_slots:
+                urgency = 1000000 + (reqs_needed * 1000) - open_slots
+            # High Priority: They need requirements, and the fewer open slots they have, the higher priority.
+            elif reqs_needed > 0:
+                urgency = 10000 + (10 - open_slots) * 100
+            # Base Priority: Fills based on skills, but heavily locked players still need priority 
+            # so they don't accidentally get benched and lose their only open slot.
+            else:
+                urgency = 1000 - open_slots
+                
+            benched_score = 500000 if p in benched_last else 0
+            return urgency + benched_score
+            
+        # Sort unassigned randomly, then by urgency (stable sort preserves random order for ties)
         random.shuffle(unassigned_players)
+        unassigned_players.sort(key=get_urgency, reverse=True)
         
         for p_id in unassigned_players:
             if not available_slots:

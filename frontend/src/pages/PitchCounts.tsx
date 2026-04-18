@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
 import { api } from '../api';
 import { useAuth } from '../context/AuthContext';
+import { Edit2 } from 'lucide-react';
 
 export default function PitchCounts() {
   const { selectedTeam: team } = useAuth();
   const [games, setGames] = useState<any[]>([]);
   const [roster, setRoster] = useState<any[]>([]);
+  const [allTeams, setAllTeams] = useState<any[]>([]);
 
   const getManasquanDate = () => {
     return new Intl.DateTimeFormat('en-CA', { 
@@ -17,7 +19,9 @@ export default function PitchCounts() {
   };
 
   const [newGameDate, setNewGameDate] = useState(getManasquanDate());
+  const [opponent, setOpponent] = useState('');
   const [pitchCounts, setPitchCounts] = useState<Record<string, number>>({});
+  const [selectedGame, setSelectedGame] = useState<any>(null);
   
   useEffect(() => {
     if (team) {
@@ -27,51 +31,86 @@ export default function PitchCounts() {
 
   const fetchData = async () => {
     try {
-      const rRes = await api.get(`/api/roster/${team.id}`);
+      const [rRes, tRes, gRes] = await Promise.all([
+        api.get(`/api/roster/${team?.id}`),
+        api.get('/api/teams'),
+        api.get(`/api/games/${team?.id}`)
+      ]);
       setRoster(rRes.data.roster);
-    } catch (e) {
-      console.error("Failed to fetch roster", e);
-    }
-    try {
-      const gRes = await api.get(`/api/games/${team.id}`);
+      setAllTeams(tRes.data.teams);
       setGames(gRes.data.games.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime()));
     } catch (e) {
-      console.error("Failed to fetch games", e);
+      console.error("Failed to fetch data", e);
     }
+  };
+
+  const loadGameForEdit = (game: any) => {
+    setSelectedGame(game);
+    setNewGameDate(game.date);
+    setOpponent(game.opponent || '');
+    setPitchCounts(game.pitchCounts || {});
+  };
+
+  const clearForm = () => {
+    setSelectedGame(null);
+    setNewGameDate(getManasquanDate());
+    setOpponent('');
+    setPitchCounts({});
   };
 
   const savePastGame = async () => {
     if (!newGameDate) return alert("Please select a date");
+    if (!opponent) return alert("Please select an opponent");
     
     // Only save players who actually pitched
     const activePitchCounts = Object.fromEntries(
       Object.entries(pitchCounts).filter(([_, count]) => count > 0)
     );
 
-    await api.post('/api/games', {
-      team_id: team.id,
+    const gameToSave = {
+      ...(selectedGame || {}),
+      team_id: team?.id,
       date: newGameDate,
+      opponent,
       pitchCounts: activePitchCounts,
-      is_past_entry: true
-    });
+      is_past_entry: selectedGame ? selectedGame.is_past_entry : true
+    };
+
+    await api.post('/api/games', gameToSave);
     
-    setNewGameDate('');
-    setPitchCounts({});
+    clearForm();
     fetchData();
   };
 
   if (!team) return <div className="glass-panel" style={{textAlign: 'center', padding: '50px'}}>You have not been assigned a team yet.</div>;
 
+  const opponentTeams = allTeams.filter(t => t.League === team.League && t.id !== team.id);
+
   return (
     <div className="grid-layout">
       <div className="glass-panel">
-        <h2>Add Past Game / Pitch Counts</h2>
-        <div style={{display:'flex', gap:'10px', marginBottom:'20px'}}>
-          <div style={{display: 'flex', flexDirection: 'column', gap: '2px'}}>
-            <input type="date" className="input-field" value={newGameDate} onChange={e => setNewGameDate(e.target.value)} />
+        <h2>{selectedGame ? 'Edit Game Pitch Counts' : 'Add Past Game / Pitch Counts'}</h2>
+        <div style={{display:'flex', gap:'10px', marginBottom:'20px', alignItems: 'flex-start'}}>
+          <div style={{display: 'flex', flexDirection: 'column', gap: '2px', flex: 1}}>
+            <input type="date" className="input-field" value={newGameDate} onChange={e => setNewGameDate(e.target.value)} disabled={!!selectedGame} />
             <span style={{fontSize: '10px', color: 'var(--text-secondary)', fontStyle: 'italic'}}>Manasquan Time</span>
           </div>
-          <button className="btn" onClick={savePastGame} style={{height: '38px'}}>Save Record</button>
+          <div style={{display: 'flex', flexDirection: 'column', gap: '2px', flex: 1}}>
+            <select 
+              className="select-field" 
+              value={opponent} 
+              onChange={e => setOpponent(e.target.value)}
+            >
+              <option value="">Select Opponent...</option>
+              {opponentTeams.map(t => (
+                <option key={t.id} value={t.id}>{t.Team_Name}</option>
+              ))}
+            </select>
+          </div>
+          <button className="btn" onClick={savePastGame} style={{height: '38px'}}>Save</button>
+          {selectedGame && (
+            <button className="btn btn-danger" onClick={clearForm} style={{height: '38px'}}>Cancel</button>
+          )}
         </div>
 
         <div style={{maxHeight: '400px', overflowY: 'auto'}}>
@@ -105,25 +144,37 @@ export default function PitchCounts() {
           <p style={{color: 'var(--text-secondary)'}}>No games recorded.</p>
         ) : (
           <div style={{display: 'flex', flexDirection: 'column', gap: '16px'}}>
-            {games.map(g => (
-              <div key={g.id} style={{background: 'rgba(15,23,42,0.8)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)'}}>
-                <h3 style={{margin: '0 0 12px 0'}}>{g.date}</h3>
-                {g.pitchCounts && Object.keys(g.pitchCounts).length > 0 ? (
-                  <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px'}}>
-                    {Object.entries(g.pitchCounts).map(([pid, count]) => {
-                      const player = roster.find(r => r.id === pid);
-                      return (
-                        <div key={pid} style={{fontSize: '14px', color: 'var(--text-secondary)'}}>
-                          <strong style={{color: 'var(--text-primary)'}}>{player ? player.name : 'Unknown'}:</strong> {count as number} pitches
-                        </div>
-                      );
-                    })}
+            {games.map(g => {
+              const oppName = allTeams.find(t => t.id === g.opponent)?.Team_Name || g.opponent || 'Unknown Opponent';
+              return (
+                <div key={g.id} style={{background: 'rgba(15,23,42,0.8)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)', position: 'relative'}}>
+                  <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px'}}>
+                    <h3 style={{margin: 0}}>{g.date} vs {oppName}</h3>
+                    <button 
+                      className="btn" 
+                      style={{padding: '4px 8px', fontSize: '12px'}} 
+                      onClick={() => loadGameForEdit(g)}
+                    >
+                      <Edit2 size={12} style={{marginRight: '4px'}} /> Edit
+                    </button>
                   </div>
-                ) : (
-                  <p style={{margin: 0, fontSize: '14px', color: 'var(--text-secondary)'}}>No pitches recorded.</p>
-                )}
-              </div>
-            ))}
+                  {g.pitchCounts && Object.keys(g.pitchCounts).length > 0 ? (
+                    <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px'}}>
+                      {Object.entries(g.pitchCounts).map(([pid, count]) => {
+                        const player = roster.find(r => r.id === pid);
+                        return (
+                          <div key={pid} style={{fontSize: '14px', color: 'var(--text-secondary)'}}>
+                            <strong style={{color: 'var(--text-primary)'}}>{player ? player.name : 'Unknown'}:</strong> {count as number} pitches
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p style={{margin: 0, fontSize: '14px', color: 'var(--text-secondary)'}}>No pitches recorded.</p>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
