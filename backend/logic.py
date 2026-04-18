@@ -1,7 +1,9 @@
 import pandas as pd
 import random
 
-def solve_rotation(active_players, league, locks, skills, pitcher_name=None, projected_pitches=0, active_count=10):
+def solve_rotation(active_players, league, locks, skills, pitcher_name=None, projected_pitches=0, active_count=10, ineligible_pitchers=None):
+    if ineligible_pitchers is None:
+        ineligible_pitchers = []
     innings = [1, 2, 3, 4, 5, 6]
     
     if league == "Minors":
@@ -66,10 +68,16 @@ def solve_rotation(active_players, league, locks, skills, pitcher_name=None, pro
             needs_if = (if_counts[p_id] < 2 if league == "Minors" else False) and not is_sub
             
             chosen_pos = None
-            possible_if = [s for s in available_slots if s in if_pos]
-            possible_of = [s for s in available_slots if s in of_pos]
             
-            if is_sub and 'RF' in available_slots:
+            # Create a copy of available slots for this specific player to apply constraints
+            player_slots = available_slots.copy()
+            if p_id in ineligible_pitchers and 'P' in player_slots:
+                player_slots.remove('P')
+                
+            possible_if = [s for s in player_slots if s in if_pos]
+            possible_of = [s for s in player_slots if s in of_pos]
+            
+            if is_sub and 'RF' in player_slots:
                 chosen_pos = 'RF'
             elif needs_of and possible_of:
                 chosen_pos = random.choice(possible_of)
@@ -83,11 +91,12 @@ def solve_rotation(active_players, league, locks, skills, pitcher_name=None, pro
                     chosen_pos = random.choice(possible_if)
                 elif p_skills["OF"] > p_skills["IF"] and possible_of:
                     chosen_pos = random.choice(possible_of)
-                else:
-                    chosen_pos = random.choice(available_slots)
+                elif player_slots:
+                    chosen_pos = random.choice(player_slots)
                     
-            grid.at[p_id, inn] = chosen_pos
-            available_slots.remove(chosen_pos)
+            if chosen_pos:
+                grid.at[p_id, inn] = chosen_pos
+                available_slots.remove(chosen_pos)
             
             if chosen_pos in if_pos:
                 if_counts[p_id] += 1

@@ -162,6 +162,15 @@ export default function GameSetup() {
 
   const activeCount = activePlayers.filter(p => p.isActive).length;
 
+  const getEstPitches = (playerId: string) => {
+    let pCount = 0;
+    for (let i = 1; i <= 6; i++) {
+      const pos = locks[playerId]?.[i] || rotation.find(r => r.id === playerId)?.[i.toString()];
+      if (pos === 'P') pCount++;
+    }
+    return pCount * (team?.League === 'Majors' ? 15 : 20);
+  };
+
   const generateRotation = async () => {
     setGenerating(true);
     setValidationMsg('');
@@ -177,7 +186,8 @@ export default function GameSetup() {
         locks: locks,
         skills: skillsMap,
         roster_map: Object.fromEntries(activePlayers.map(p => [p.id, p.name])),
-        active_count: activeCount
+        active_count: activeCount,
+        ineligible_pitchers: Object.keys(pitchWarnings)
       };
       
       const response = await api.post('/api/generate_rotation', payload);
@@ -290,6 +300,11 @@ export default function GameSetup() {
                                 <AlertCircle size={12}/> {pitchWarnings[player.id]}
                               </span>
                             )}
+                            {getEstPitches(player.id) > 0 && !pitchWarnings[player.id] && player.isActive && (
+                              <span style={{fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px'}}>
+                                ⚾ Est. Pitches: ~{getEstPitches(player.id)}
+                              </span>
+                            )}
                           </div>
                           <button 
                             className={`btn ${player.isActive ? '' : 'btn-danger'}`} 
@@ -362,7 +377,15 @@ export default function GameSetup() {
                             onChange={(e) => updateLock(p.id, i.toString(), e.target.value)}
                           >
                             <option value="">--</option>
-                            {positions.map(pos => <option key={pos} value={pos}>{pos}</option>)}
+                            {positions.map(pos => (
+                              <option 
+                                key={pos} 
+                                value={pos} 
+                                disabled={pos === 'P' && !!pitchWarnings[p.id]}
+                              >
+                                {pos}
+                              </option>
+                            ))}
                           </select>
                         </td>
                       ))}
