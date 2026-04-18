@@ -5,6 +5,7 @@ from firebase_admin import firestore
 from .firebase_auth import verify_token
 from .logic import solve_rotation
 from pydantic import BaseModel
+from google.cloud.firestore_v1.base_query import FieldFilter
 import os
 
 app = FastAPI()
@@ -60,7 +61,7 @@ def require_coach_or_admin(user: dict = Depends(get_current_user)):
 def get_me(user: dict = Depends(get_current_user)):
     assigned_teams = []
     if user.get("role") in ["coach", "admin"]:
-        teams_ref = db.collection("teams").where("coachEmails", "array_contains", user["email"]).stream()
+        teams_ref = db.collection("teams").where(filter=FieldFilter("coachEmails", "array_contains", user["email"])).stream()
         for t in teams_ref:
             assigned_teams.append({**t.to_dict(), "id": t.id})
             
@@ -167,8 +168,6 @@ def generate_rotation_api(req: RotationRequest, user: dict = Depends(require_coa
         return {"rotation": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-from google.cloud.firestore_v1.base_query import FieldFilter
 
 @app.get("/api/games/{team_id}")
 def get_games(team_id: str, user: dict = Depends(require_coach_or_admin)):
