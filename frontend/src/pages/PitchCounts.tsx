@@ -38,7 +38,22 @@ export default function PitchCounts() {
       ]);
       setRoster(rRes.data.roster);
       setAllTeams(tRes.data.teams);
-      setGames(gRes.data.games.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+      const allGames = gRes.data.games.sort((a: any, b: any) => {
+        const dateDiff = new Date(b.date).getTime() - new Date(a.date).getTime();
+        if (dateDiff !== 0) return dateDiff;
+        return (b.version_time || 0) - (a.version_time || 0);
+      });
+
+      const grouped: any[] = [];
+      const seenParents = new Set();
+      allGames.forEach((g: any) => {
+        const parentId = g.parent_game_id || g.id;
+        if (!seenParents.has(parentId)) {
+          seenParents.add(parentId);
+          grouped.push(g);
+        }
+      });
+      setGames(grouped);
     } catch (e) {
       console.error("Failed to fetch data", e);
     }

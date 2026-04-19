@@ -29,6 +29,8 @@ export default function GameSetup() {
   const [gameDate, setGameDate] = useState(getManasquanDate());
   const [opponent, setOpponent] = useState('');
   const [isHome, setIsHome] = useState(true);
+  const [gameStatus, setGameStatus] = useState<'Planned'|'Active'|'Completed'>('Planned');
+  const [currentInning, setCurrentInning] = useState(1);
   
   // Rotation state
   const [locks, setLocks] = useState<Record<string, Record<string, string>>>({});
@@ -56,12 +58,26 @@ export default function GameSetup() {
         let r = rRes.data.roster.map((p: any) => ({ ...p, isActive: true }));
         setAllTeams(tRes.data.teams);
         
-        // Find most recent past game
-        const fetchedPastGames = gRes.data.games.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
-        setPastGames(fetchedPastGames);
+        const allGames = gRes.data.games.sort((a: any, b: any) => {
+          const dateDiff = new Date(b.date).getTime() - new Date(a.date).getTime();
+          if (dateDiff !== 0) return dateDiff;
+          return (b.version_time || 0) - (a.version_time || 0);
+        });
+
+        const grouped: any[] = [];
+        const seenParents = new Set();
+        allGames.forEach((g: any) => {
+          const parentId = g.parent_game_id || g.id;
+          if (!seenParents.has(parentId)) {
+            seenParents.add(parentId);
+            grouped.push(g); // keep only latest version
+          }
+        });
         
-        if (fetchedPastGames.length > 0) {
-          const lastGame = fetchedPastGames[0];
+        setPastGames(grouped);
+        
+        if (grouped.length > 0) {
+          const lastGame = grouped[0];
           // Restore lineup order
           if (lastGame.activePlayers) {
             // merge activePlayers order with current roster (in case roster changed)
@@ -82,10 +98,6 @@ export default function GameSetup() {
             }
             r = [...orderedRoster, ...r]; // append any new players
           }
-          // Restore locks
-          if (lastGame.locks) {
-            setLocks(lastGame.locks);
-          }
         }
         
         setActivePlayers(r);
@@ -102,6 +114,8 @@ export default function GameSetup() {
       setGameDate(game.date);
       setOpponent(game.opponent);
       setIsHome(game.isHome);
+      setGameStatus(game.status || 'Planned');
+      setCurrentInning(game.currentInning || 1);
       setActivePlayers(game.activePlayers || []);
       setLocks(game.locks || {});
       setRotation(game.rotation || []);
@@ -231,11 +245,24 @@ export default function GameSetup() {
     setGenerating(true);
     setValidationMsg('');
 
+    const effectiveLocks = JSON.parse(JSON.stringify(locks));
+    if (gameStatus === 'Active' && currentInning > 1) {
+      for (let i = 1; i < currentInning; i++) {
+        rotation.forEach(r => {
+          const pos = r[i.toString()];
+          if (pos) {
+            if (!effectiveLocks[r.id]) effectiveLocks[r.id] = {};
+            effectiveLocks[r.id][i.toString()] = pos;
+          }
+        });
+      }
+    }
+
     // Check if Pitcher and Catcher are locked for all 6 innings
     const isBatterySet = [1, 2, 3, 4, 5, 6].every(inn => {
       let hasP = false;
       let hasC = false;
-      Object.values(locks).forEach(playerLocks => {
+      Object.values(effectiveLocks).forEach((playerLocks: any) => {
         if (playerLocks[inn] === 'P') hasP = true;
         if (playerLocks[inn] === 'C') hasC = true;
       });
@@ -256,7 +283,7 @@ export default function GameSetup() {
       let lockedOF = 0;
       let openSlots = 6;
       
-      const pLocks = locks[player.id] || {};
+      const pLocks = effectiveLocks[player.id] || {};
       for (let i = 1; i <= 6; i++) {
         const pos = pLocks[i];
         if (pos) {
@@ -291,7 +318,7 @@ export default function GameSetup() {
       const payload = {
         ordered_lineup: activePlayers.filter(p => p.isActive).map(p => p.id),
         league: team?.League || 'Majors',
-        locks: locks,
+        locks: effectiveLocks,
         skills: skillsMap,
         roster_map: Object.fromEntries(activePlayers.map(p => [p.id, p.name])),
         active_count: activeCount,
@@ -321,6 +348,8 @@ export default function GameSetup() {
         date: gameDate,
         opponent,
         isHome,
+        status: gameStatus,
+        currentInning,
         activePlayers,
         locks,
         rotation,
@@ -413,6 +442,19 @@ export default function GameSetup() {
           <option value="">Select Opponent</option>
           {opponentTeams.map(t => <option key={t.id} value={t.id}>{t.Team_Name}</option>)}
         </select>
+        <select className="select-field" style={{width: 'auto', border: gameStatus === 'Active' ? '1px solid var(--accent)' : ''}} value={gameStatus} onChange={e => setGameStatus(e.target.value as any)}>
+          <option value="Planned">Planned</option>
+          <option value="Active">Active</option>
+          <option value="Completed">Completed</option>
+        </select>
+        {gameStatus === 'Active' && (
+          <div style={{display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(59, 130, 246, 0.1)', padding: '4px 12px', borderRadius: '8px', border: '1px solid var(--accent)'}}>
+            <span style={{fontSize: '14px', color: 'var(--accent)', fontWeight: 'bold'}}>Entering Inning:</span>
+            <select className="select-field" style={{width: 'auto', padding: '4px 8px'}} value={currentInning} onChange={e => setCurrentInning(parseInt(e.target.value))}>
+              {[1,2,3,4,5,6].map(i => <option key={i} value={i}>{i}</option>)}
+            </select>
+          </div>
+        )}
         <button className="btn" onClick={saveGame} disabled={rotation.length === 0}>Save Game</button>
       </div>
 
@@ -565,7 +607,7 @@ export default function GameSetup() {
                               <option 
                                 key={pos} 
                                 value={pos} 
-                                disabled={pos === 'P' && !!pitchWarnings[p.id]}
+                                disabled={(pos === 'P' && !!pitchWarnings[p.id]) || (gameStatus === 'Active' && i < currentInning)}
                               >
                                 {pos}
                               </option>

@@ -223,12 +223,19 @@ def get_games(team_id: str, user: dict = Depends(require_coach_or_admin)):
 
 @app.post("/api/games")
 def save_game(game_data: dict = Body(...), user: dict = Depends(require_coach_or_admin)):
+    import time
     team_id = game_data.get("team_id")
     date = game_data.get("date")
     if not team_id or not date:
         raise HTTPException(status_code=400, detail="team_id and date required")
         
-    doc_id = f"{team_id}_{date}"
+    parent_id = f"{team_id}_{date}"
+    version_time = int(time.time() * 1000)
+    doc_id = f"{parent_id}_{version_time}"
+    
+    game_data["parent_game_id"] = parent_id
+    game_data["version_time"] = version_time
+    
     db.collection("games").document(doc_id).set(game_data)
     return {"success": True, "id": doc_id}
 
