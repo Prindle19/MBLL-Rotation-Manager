@@ -22,6 +22,7 @@ export default function PitchCounts() {
   const [opponent, setOpponent] = useState('');
   const [pitchCounts, setPitchCounts] = useState<Record<string, number>>({});
   const [selectedGame, setSelectedGame] = useState<any>(null);
+  const [gameStatus, setGameStatus] = useState<string>('Completed');
   
   useEffect(() => {
     if (team) {
@@ -64,6 +65,7 @@ export default function PitchCounts() {
     setNewGameDate(game.date);
     setOpponent(game.opponent || '');
     setPitchCounts(game.pitchCounts || {});
+    setGameStatus(game.status || 'Completed');
   };
 
   const clearForm = () => {
@@ -71,6 +73,7 @@ export default function PitchCounts() {
     setNewGameDate(getManasquanDate());
     setOpponent('');
     setPitchCounts({});
+    setGameStatus('Completed');
   };
 
   const savePastGame = async () => {
@@ -88,6 +91,7 @@ export default function PitchCounts() {
       date: newGameDate,
       opponent,
       pitchCounts: activePitchCounts,
+      status: gameStatus,
       is_past_entry: selectedGame ? selectedGame.is_past_entry : true
     };
 
@@ -128,29 +132,40 @@ export default function PitchCounts() {
           )}
         </div>
 
-        <div style={{maxHeight: '400px', overflowY: 'auto'}}>
-          <table>
-            <thead><tr><th>Player</th><th>Pitches Thrown</th></tr></thead>
-            <tbody>
-              {roster.map(p => (
-                <tr key={p.id}>
-                  <td>{p.name}</td>
-                  <td>
-                    <input 
-                      type="number" 
-                      min="0"
-                      className="input-field" 
-                      style={{width: '80px', padding: '6px'}}
-                      value={pitchCounts[p.id] || ''}
-                      onChange={e => setPitchCounts({...pitchCounts, [p.id]: parseInt(e.target.value) || 0})}
-                      placeholder="0"
-                    />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        {selectedGame && gameStatus !== 'Completed' ? (
+          <div style={{padding: '30px', textAlign: 'center', background: 'rgba(239, 68, 68, 0.1)', borderRadius: '8px', border: '1px solid #ef4444'}}>
+            <p style={{marginBottom: '20px', color: 'white', fontSize: '16px'}}>
+              ⚠️ This game is currently marked as <strong>{gameStatus}</strong>. You must finalize the game before entering pitch counts.
+            </p>
+            <button className="btn" style={{justifyContent: 'center'}} onClick={() => setGameStatus('Completed')}>
+              Mark Game as Completed
+            </button>
+          </div>
+        ) : (
+          <div style={{maxHeight: '400px', overflowY: 'auto'}}>
+            <table>
+              <thead><tr><th>Player</th><th>Pitches Thrown</th></tr></thead>
+              <tbody>
+                {roster.map(p => (
+                  <tr key={p.id}>
+                    <td>{p.name}</td>
+                    <td>
+                      <input 
+                        type="number" 
+                        min="0"
+                        className="input-field" 
+                        style={{width: '80px', padding: '6px'}}
+                        value={pitchCounts[p.id] || ''}
+                        onChange={e => setPitchCounts({...pitchCounts, [p.id]: parseInt(e.target.value) || 0})}
+                        placeholder="0"
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       <div className="glass-panel">

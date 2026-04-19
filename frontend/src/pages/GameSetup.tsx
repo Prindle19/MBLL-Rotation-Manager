@@ -31,6 +31,7 @@ export default function GameSetup() {
   const [isHome, setIsHome] = useState(true);
   const [gameStatus, setGameStatus] = useState<'Planned'|'Active'|'Completed'>('Planned');
   const [currentInning, setCurrentInning] = useState(1);
+  const [loadedGameId, setLoadedGameId] = useState<string | null>(null);
   
   // Rotation state
   const [locks, setLocks] = useState<Record<string, Record<string, string>>>({});
@@ -111,6 +112,7 @@ export default function GameSetup() {
   useEffect(() => {
     if (location.state?.gameToLoad) {
       const game = location.state.gameToLoad;
+      setLoadedGameId(game.parent_game_id || game.id);
       setGameDate(game.date);
       setOpponent(game.opponent);
       setIsHome(game.isHome);
@@ -135,11 +137,13 @@ export default function GameSetup() {
     selectedDate.setHours(0,0,0,0);
     
     activePlayers.forEach(p => {
-      // Find the most recent game BEFORE the selectedDate where they pitched
+      // Find the most recent game BEFORE or ON the selectedDate where they pitched (excluding the game currently being edited)
       for (const game of pastGames) {
+        if ((game.parent_game_id || game.id) === loadedGameId) continue;
+        
         const gDate = new Date(game.date);
         gDate.setHours(0,0,0,0);
-        if (gDate.getTime() >= selectedDate.getTime()) continue;
+        if (gDate.getTime() > selectedDate.getTime()) continue;
         
         let pitchCount = 0;
         if (game.pitchCounts && game.pitchCounts[p.id]) {

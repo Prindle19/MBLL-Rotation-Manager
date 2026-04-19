@@ -236,6 +236,17 @@ def save_game(game_data: dict = Body(...), user: dict = Depends(require_coach_or
     game_data["parent_game_id"] = parent_id
     game_data["version_time"] = version_time
     
+    if "pitchCounts" not in game_data:
+        try:
+            latest = list(db.collection("games").where(filter=FieldFilter("parent_game_id", "==", parent_id)).stream())
+            if latest:
+                latest.sort(key=lambda x: x.to_dict().get("version_time", 0), reverse=True)
+                latest_data = latest[0].to_dict()
+                if "pitchCounts" in latest_data:
+                    game_data["pitchCounts"] = latest_data["pitchCounts"]
+        except Exception:
+            pass
+            
     db.collection("games").document(doc_id).set(game_data)
     return {"success": True, "id": doc_id}
 
