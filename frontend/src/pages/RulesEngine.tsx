@@ -1,4 +1,4 @@
-import { ShieldAlert, BookOpen, Clock, Activity, AlertCircle, Users, Settings } from 'lucide-react';
+import { ShieldAlert, BookOpen, Clock, Activity, Users, Settings } from 'lucide-react';
 
 export default function RulesEngine() {
   return (
