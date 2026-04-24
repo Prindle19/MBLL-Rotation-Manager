@@ -1,4 +1,4 @@
-import { ShieldAlert, BookOpen, Clock, Activity, AlertCircle, Users } from 'lucide-react';
+import { ShieldAlert, BookOpen, Clock, Activity, AlertCircle, Users, Settings } from 'lucide-react';
 
 export default function RulesEngine() {
   return (
@@ -72,22 +72,6 @@ export default function RulesEngine() {
         <div style={{display: 'flex', flexDirection: 'column', gap: '32px'}}>
 
           <div className="glass-panel">
-            <h2 style={{display: 'flex', alignItems: 'center', gap: '8px', color: '#f59e0b'}}>
-              <AlertCircle size={24} /> Absolute Priority Mode
-            </h2>
-            <p style={{color: 'var(--text-secondary)', marginBottom: '16px'}}>
-              The engine assigns an "Urgency Score" to every player each inning. 
-            </p>
-            <p style={{color: 'var(--text-secondary)', marginBottom: '16px'}}>
-              If a player has exactly enough open innings left in the game to meet their mandatory requirements (e.g., they need 2 IF innings and only have 2 innings left to play), they enter <strong>Absolute Priority Mode</strong>. 
-            </p>
-            <p style={{color: 'var(--text-secondary)', margin: 0}}>
-              Players in this mode bypass all skill ratings and are immediately assigned to the position types they need, ensuring no player ever falls short of league minimums. 
-              Additionally, players who were benched in the previous inning receive a massive urgency boost to ensure nobody sits twice in a row.
-            </p>
-          </div>
-
-          <div className="glass-panel">
             <h2 style={{display: 'flex', alignItems: 'center', gap: '8px', color: '#ef4444'}}>
               <Clock size={24} /> Pitch Count & Rest Rules
             </h2>
@@ -134,6 +118,22 @@ export default function RulesEngine() {
                 </tr>
               </tbody>
             </table>
+          </div>
+
+          <div className="glass-panel">
+            <h2 style={{display: 'flex', alignItems: 'center', gap: '8px', color: '#6366f1'}}>
+              <Settings size={24} /> Requirement Enforcement & Bench Rules
+            </h2>
+            <p style={{color: 'var(--text-secondary)', marginBottom: '16px'}}>
+              The system continuously monitors every player's remaining innings to ensure no one misses their mandatory requirements. 
+            </p>
+            <p style={{color: 'var(--text-secondary)', marginBottom: '16px'}}>
+              If a player is running out of time to meet their minimums (for example, they need 2 infield innings and only have 2 innings left to play), the algorithm steps in. 
+              It ignores their skill ratings and immediately assigns them to the exact position they need so they never fall short.
+            </p>
+            <p style={{color: 'var(--text-secondary)', margin: 0}}>
+              The system also actively tracks who has sat out. Anyone who has already been benched is automatically moved to the front of the line for an active position, ensuring kids don't sit on the bench multiple times unless mathematically necessary due to roster size.
+            </p>
           </div>
 
           <div className="glass-panel">
