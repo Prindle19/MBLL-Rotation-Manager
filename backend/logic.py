@@ -123,6 +123,10 @@ def solve_rotation(active_players, league, locks, skills, pitcher_name=None, pro
             possible_if = [s for s in player_slots if s in if_pos]
             possible_of = [s for s in player_slots if s in of_pos]
             
+            # Enforce rule: >3 IF skill should only play 1 OF inning max
+            if p_skills["IF"] > 3 and of_counts[p_id] >= 1 and possible_if:
+                possible_of = []
+            
             if is_sub and 'RF' in player_slots:
                 chosen_pos = 'RF'
             elif needs_of and possible_of:
