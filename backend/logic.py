@@ -91,7 +91,12 @@ def solve_rotation(active_players, league, locks, skills, pitcher_name=None, pro
                 urgency = 1000 - open_slots
                 
             benched_score = 500000 if p in benched_last else 0
-            return urgency + benched_score
+            
+            # Additional penalty for total times benched already
+            times_benched = sum(1 for i in range(1, inn) if pd.isna(grid.at[p, i]) or grid.at[p, i] == "Bench")
+            total_bench_score = times_benched * 50000
+            
+            return urgency + benched_score + total_bench_score
             
         # Sort unassigned randomly, then by urgency (stable sort preserves random order for ties)
         random.shuffle(unassigned_players)
