@@ -67,7 +67,7 @@ def solve_rotation(active_players, league, locks, skills, pitcher_name=None, pro
                 if pd.isna(prev_pos) or prev_pos == "Bench":
                     benched_last.add(p)
                     
-        def get_urgency(p):
+        def get_bench_urgency(p):
             open_slots = sum(1 for i in range(inn, 7) if pd.isna(grid.at[p, i]))
             needs_of_flag = of_counts[p] < 1 and not str(p).startswith("sub_")
             needs_if_flag = (if_counts[p] < 2 if league == "Minors" else False) and not str(p).startswith("sub_")
@@ -77,32 +77,54 @@ def solve_rotation(active_players, league, locks, skills, pitcher_name=None, pro
             if needs_if_flag: reqs_needed += 1
             
             urgency = 0
-            
-            # Absolute Priority Mode: They have exactly enough (or fewer) open slots to meet their needs. 
-            # They MUST go first.
             if reqs_needed > 0 and reqs_needed >= open_slots:
                 urgency = 1000000 + (reqs_needed * 1000) - open_slots
-            # High Priority: They need requirements, and the fewer open slots they have, the higher priority.
             elif reqs_needed > 0:
                 urgency = 10000 + (10 - open_slots) * 100
-            # Base Priority: Fills based on skills, but heavily locked players still need priority 
-            # so they don't accidentally get benched and lose their only open slot.
             else:
                 urgency = 1000 - open_slots
                 
             benched_score = 500000 if p in benched_last else 0
             
-            # Additional penalty for total times benched already
             times_benched = sum(1 for i in range(1, inn) if pd.isna(grid.at[p, i]) or grid.at[p, i] == "Bench")
             total_bench_score = times_benched * 50000
             
             return urgency + benched_score + total_bench_score
+
+        def get_position_urgency(p):
+            open_slots = sum(1 for i in range(inn, 7) if pd.isna(grid.at[p, i]))
+            needs_of_flag = of_counts[p] < 1 and not str(p).startswith("sub_")
+            needs_if_flag = (if_counts[p] < 2 if league == "Minors" else False) and not str(p).startswith("sub_")
             
-        # Sort unassigned randomly, then by urgency (stable sort preserves random order for ties)
+            reqs_needed = 0
+            if needs_of_flag: reqs_needed += 1
+            if needs_if_flag: reqs_needed += 1
+            
+            base = 0
+            if reqs_needed > 0 and reqs_needed >= open_slots:
+                base = 1000000 + (reqs_needed * 1000) - open_slots
+            elif reqs_needed > 0:
+                base = 10000 + (10 - open_slots) * 100
+            else:
+                base = 1000 - open_slots
+                
+            p_skills = skills.get(p, {"IF": 3, "OF": 3})
+            if p_skills["IF"] > 3 and of_counts[p] >= 1 and reqs_needed == 0:
+                base += 5000
+                
+            return base
+            
+        # 1. Determine WHO PLAYS this inning (Bench avoidance)
         random.shuffle(unassigned_players)
-        unassigned_players.sort(key=get_urgency, reverse=True)
+        unassigned_players.sort(key=get_bench_urgency, reverse=True)
         
-        for p_id in unassigned_players:
+        num_available = len(available_slots)
+        playing_players = unassigned_players[:num_available]
+        
+        # 2. Determine PICK ORDER for positions (Requirement priority)
+        playing_players.sort(key=get_position_urgency, reverse=True)
+        
+        for p_id in playing_players:
             if not available_slots:
                 break
                 
