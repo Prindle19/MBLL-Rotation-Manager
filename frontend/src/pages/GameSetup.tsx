@@ -237,6 +237,33 @@ export default function GameSetup() {
     return pCount * 15;
   };
 
+  const getPlayerStats = (playerId: string) => {
+    let ifCount = 0;
+    let ofCount = 0;
+    let benchCount = 0;
+    
+    const pLocks = locks[playerId] || {};
+    const row = rotation.find(r => r.id === playerId) || {};
+    
+    const ifPositions = ['P', 'C', '1B', '2B', '3B', 'SS'];
+    const ofPositions = ['LF', 'LC', 'RC', 'RF', 'CF'];
+
+    for (let i = 1; i <= 6; i++) {
+      const pos = pLocks[i] || row[i.toString()];
+      if (ifPositions.includes(pos)) ifCount++;
+      else if (ofPositions.includes(pos)) ofCount++;
+      else if (pos === 'Bench') benchCount++;
+    }
+
+    const minIF = team?.League === 'Minors' ? 2 : 0;
+    const minOF = 1;
+
+    const meetsIF = ifCount >= minIF;
+    const meetsOF = ofCount >= minOF;
+    
+    return { ifCount, ofCount, benchCount, meetsIF, meetsOF, minIF, minOF };
+  };
+
   const getMaxPitches = (age: number) => {
     if (!age) return 85; // default fallback
     if (age <= 8) return 50;
@@ -381,31 +408,31 @@ export default function GameSetup() {
   return (
     <>
       {/* Printable Dugout Chart */}
-      <div className="print-only" style={{ padding: '20px' }}>
-        <div style={{ marginBottom: '16px' }}>
-          <h1 style={{ margin: 0, color: 'black', fontSize: '24px' }}>MBLL {team.League} Dugout Chart - {gameDate} | {matchTitle}</h1>
+      <div className="print-only" style={{ padding: '10px' }}>
+        <div style={{ marginBottom: '12px' }}>
+          <h1 style={{ margin: 0, color: 'black', fontSize: '20px' }}>MBLL {team.League} Dugout Chart - {gameDate} | {matchTitle}</h1>
         </div>
-        <div style={{ display: 'flex', gap: '40px' }}>
+        <div style={{ display: 'flex', gap: '24px' }}>
           <div style={{ flex: '0 0 auto', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
             <div>
-              <h2 style={{ borderBottom: '2px solid black', paddingBottom: '8px', color: 'black', margin: '0 0 12px 0', fontSize: '20px' }}>Batting Order</h2>
-              <ol style={{ fontSize: '16px', lineHeight: '1.6', margin: 0, paddingLeft: '24px', color: 'black', whiteSpace: 'nowrap' }}>
+              <h2 style={{ borderBottom: '2px solid black', paddingBottom: '4px', color: 'black', margin: '0 0 8px 0', fontSize: '16px' }}>Batting Order</h2>
+              <ol style={{ fontSize: '14px', lineHeight: '1.4', margin: 0, paddingLeft: '24px', color: 'black', whiteSpace: 'nowrap' }}>
                 {activePlayers.filter(p => p.isActive).map((p) => (
                   <li key={p.id}>{p.name}</li>
                 ))}
               </ol>
             </div>
-            <div>
-              <img src="/StreamSplitterLogo.png" alt="StreamSplitter" style={{width: '160px', height: 'auto'}} />
+            <div style={{ marginTop: '16px' }}>
+              <img src="/StreamSplitterLogo.png" alt="StreamSplitter" style={{width: '120px', height: 'auto'}} />
             </div>
           </div>
           <div style={{ flex: 1 }}>
-            <h2 style={{ borderBottom: '2px solid black', paddingBottom: '8px', color: 'black', margin: '0 0 12px 0', fontSize: '20px' }}>Defensive Rotation</h2>
-            <table className="print-table" style={{ width: '100%', borderCollapse: 'collapse', color: 'black', fontSize: '14px' }}>
+            <h2 style={{ borderBottom: '2px solid black', paddingBottom: '4px', color: 'black', margin: '0 0 8px 0', fontSize: '16px' }}>Defensive Rotation</h2>
+            <table className="print-table" style={{ width: '100%', borderCollapse: 'collapse', color: 'black', fontSize: '12px' }}>
               <thead>
                 <tr>
-                  <th style={{ border: '1px solid black', padding: '8px', textAlign: 'left' }}>Player</th>
-                  {[1,2,3,4,5,6].map(i => <th key={i} style={{ border: '1px solid black', padding: '8px', textAlign: 'center' }}>{i}</th>)}
+                  <th style={{ border: '1px solid black', padding: '4px', textAlign: 'left' }}>Player</th>
+                  {[1,2,3,4,5,6].map(i => <th key={i} style={{ border: '1px solid black', padding: '4px', textAlign: 'center' }}>{i}</th>)}
                 </tr>
               </thead>
               <tbody>
@@ -413,9 +440,9 @@ export default function GameSetup() {
                   const row = rotation.find(r => r.id === p.id) || {};
                   return (
                     <tr key={p.id}>
-                      <td style={{ border: '1px solid black', padding: '8px', textAlign: 'left' }}><strong>{p.name}</strong></td>
+                      <td style={{ border: '1px solid black', padding: '4px', textAlign: 'left' }}><strong>{p.name}</strong></td>
                       {[1,2,3,4,5,6].map(i => (
-                        <td key={i} style={{ border: '1px solid black', padding: '8px', textAlign: 'center' }}>
+                        <td key={i} style={{ border: '1px solid black', padding: '4px', textAlign: 'center' }}>
                           {locks[p.id]?.[i] || row[i.toString()] || '-'}
                         </td>
                       ))}
@@ -424,6 +451,41 @@ export default function GameSetup() {
                 })}
               </tbody>
             </table>
+
+            {/* Validation Chart for Print */}
+            <div style={{ marginTop: '16px' }}>
+              <h2 style={{ borderBottom: '2px solid black', paddingBottom: '4px', color: 'black', margin: '0 0 8px 0', fontSize: '16px' }}>Inning Requirements Validation</h2>
+              <table className="print-table" style={{ width: '100%', borderCollapse: 'collapse', color: 'black', fontSize: '11px' }}>
+                <thead>
+                  <tr>
+                    <th style={{ border: '1px solid black', padding: '2px 4px', textAlign: 'left' }}>Player</th>
+                    <th style={{ border: '1px solid black', padding: '2px 4px', textAlign: 'center' }}>IF Innings</th>
+                    <th style={{ border: '1px solid black', padding: '2px 4px', textAlign: 'center' }}>OF Innings</th>
+                    <th style={{ border: '1px solid black', padding: '2px 4px', textAlign: 'center' }}>Bench</th>
+                    <th style={{ border: '1px solid black', padding: '2px 4px', textAlign: 'center' }}>Valid</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {activePlayers.filter(p => p.isActive).map(p => {
+                    const stats = getPlayerStats(p.id);
+                    const isValid = stats.meetsIF && stats.meetsOF;
+                    return (
+                      <tr key={`print-val-${p.id}`}>
+                        <td style={{ border: '1px solid black', padding: '2px 4px', textAlign: 'left' }}>{p.name}</td>
+                        <td style={{ border: '1px solid black', padding: '2px 4px', textAlign: 'center', backgroundColor: stats.meetsIF ? 'transparent' : '#fca5a5' }}>
+                          {stats.ifCount} {stats.minIF > 0 ? `(Min ${stats.minIF})` : ''}
+                        </td>
+                        <td style={{ border: '1px solid black', padding: '2px 4px', textAlign: 'center', backgroundColor: stats.meetsOF ? 'transparent' : '#fca5a5' }}>
+                          {stats.ofCount} (Min {stats.minOF})
+                        </td>
+                        <td style={{ border: '1px solid black', padding: '2px 4px', textAlign: 'center' }}>{stats.benchCount}</td>
+                        <td style={{ border: '1px solid black', padding: '2px 4px', textAlign: 'center' }}>{isValid ? '✅' : '❌'}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </div>
@@ -626,6 +688,45 @@ export default function GameSetup() {
               </tbody>
             </table>
           </div>
+
+          {/* Validation Chart for UI */}
+          {rotation.length > 0 && (
+            <div style={{ marginTop: '24px', background: 'rgba(255, 255, 255, 0.05)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+              <h3 style={{ margin: '0 0 12px 0', fontSize: '16px' }}>Requirements Confirmation</h3>
+              <div className="table-container">
+                <table style={{ width: '100%', fontSize: '13px' }}>
+                  <thead>
+                    <tr>
+                      <th style={{ textAlign: 'left' }}>Player</th>
+                      <th style={{ textAlign: 'center' }}>IF Innings</th>
+                      <th style={{ textAlign: 'center' }}>OF Innings</th>
+                      <th style={{ textAlign: 'center' }}>Bench</th>
+                      <th style={{ textAlign: 'center' }}>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {activePlayers.filter(p => p.isActive).map(p => {
+                      const stats = getPlayerStats(p.id);
+                      const isValid = stats.meetsIF && stats.meetsOF;
+                      return (
+                        <tr key={`val-${p.id}`}>
+                          <td style={{ textAlign: 'left', fontWeight: '500' }}>{p.name}</td>
+                          <td style={{ textAlign: 'center', color: stats.meetsIF ? 'var(--text-primary)' : '#ef4444' }}>
+                            {stats.ifCount} {stats.minIF > 0 ? <span style={{fontSize: '11px', color: 'var(--text-secondary)'}}>(Min {stats.minIF})</span> : ''}
+                          </td>
+                          <td style={{ textAlign: 'center', color: stats.meetsOF ? 'var(--text-primary)' : '#ef4444' }}>
+                            {stats.ofCount} <span style={{fontSize: '11px', color: 'var(--text-secondary)'}}>(Min {stats.minOF})</span>
+                          </td>
+                          <td style={{ textAlign: 'center' }}>{stats.benchCount}</td>
+                          <td style={{ textAlign: 'center' }}>{isValid ? '✅' : '❌'}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           <div style={{ marginTop: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
             {validationMsg && (

@@ -79,17 +79,19 @@ def solve_rotation(active_players, league, locks, skills, pitcher_name=None, pro
             urgency = 0
             if reqs_needed > 0 and reqs_needed >= open_slots:
                 urgency = 1000000 + (reqs_needed * 1000) - open_slots
-            elif reqs_needed > 0:
-                urgency = 10000 + (10 - open_slots) * 100
             else:
-                urgency = 1000 - open_slots
+                # Not an emergency. Let skill dictate benching primarily.
+                urgency = 1000 + (reqs_needed * 50) - open_slots
                 
             benched_score = 500000 if p in benched_last else 0
             
             times_benched = sum(1 for i in range(1, inn) if pd.isna(grid.at[p, i]) or grid.at[p, i] == "Bench")
             total_bench_score = times_benched * 50000
             
-            return urgency + benched_score + total_bench_score
+            p_skills = skills.get(p, {"IF": 3, "OF": 3})
+            skill_score = (p_skills["IF"] + p_skills["OF"]) * 100
+            
+            return urgency + benched_score + total_bench_score + skill_score + random.randint(0, 2000)
 
         def get_position_urgency(p):
             open_slots = sum(1 for i in range(inn, 7) if pd.isna(grid.at[p, i]))
@@ -112,7 +114,11 @@ def solve_rotation(active_players, league, locks, skills, pitcher_name=None, pro
             if p_skills["IF"] > 3 and of_counts[p] >= 1 and reqs_needed == 0:
                 base += 5000
                 
-            return base
+            # Prioritize weak IF players to pick their positions first when they need IF
+            if needs_if_flag:
+                base += (5 - p_skills["IF"]) * 50
+                
+            return base + random.randint(0, 500)
             
         # 1. Determine WHO PLAYS this inning (Bench avoidance)
         random.shuffle(unassigned_players)
@@ -148,13 +154,31 @@ def solve_rotation(active_players, league, locks, skills, pitcher_name=None, pro
             # Enforce rule: >3 IF skill should only play 1 OF inning max
             if p_skills["IF"] > 3 and of_counts[p_id] >= 1 and possible_if:
                 possible_of = []
+                
+            # Prevent players from taking OF if they don't strictly need it, 
+            # AND doing so would steal it from someone who DOES need it.
+            if not needs_of and possible_of and possible_if:
+                idx = playing_players.index(p_id)
+                unassigned_need_of = sum(1 for p in playing_players[idx+1:] if pd.isna(grid.at[p, inn]) and of_counts[p] < 1 and not str(p).startswith("sub_"))
+                if len(possible_of) <= unassigned_need_of:
+                    possible_of = []
             
+            zone = None
             if is_sub and 'RF' in player_slots:
                 chosen_pos = 'RF'
             elif needs_of and possible_of:
-                chosen_pos = random.choice(possible_of)
+                zone = "OF"
             elif needs_if and possible_if:
-                chosen_pos = random.choice(possible_if)
+                # If they are a weak infielder, try to wait for 2B unless it's an emergency
+                if p_skills["IF"] <= 2 and '2B' not in possible_if:
+                    open_slots = sum(1 for i in range(inn, 7) if pd.isna(grid.at[p_id, i]))
+                    reqs = (2 - if_counts[p_id]) if league == "Minors" else 0
+                    if open_slots > reqs and possible_of:
+                        zone = "OF"
+                    else:
+                        zone = "IF"
+                else:
+                    zone = "IF"
             else:
                 # Based on skills (pick zone randomly if both exist, then use skill for specific position)
                 zone_choices = []
@@ -165,29 +189,27 @@ def solve_rotation(active_players, league, locks, skills, pitcher_name=None, pro
                     zone = "OF"
                 elif zone_choices:
                     zone = random.choice(zone_choices)
-                else:
-                    zone = None
                     
-                if zone == "OF":
-                    of_skill = p_skills["OF"]
-                    premium_of = [p for p in possible_of if p in ['CF', 'LC', 'LF']]
-                    hidden_of = [p for p in possible_of if p in ['RF', 'RC']]
-                    if of_skill >= 4 and premium_of:
-                        chosen_pos = random.choice(premium_of)
-                    elif of_skill <= 2 and hidden_of:
-                        chosen_pos = random.choice(hidden_of)
-                    else:
-                        chosen_pos = random.choice(possible_of)
-                elif zone == "IF":
-                    if_skill = p_skills["IF"]
-                    premium_if = [p for p in possible_if if p in ['SS', '1B', '3B']]
-                    hidden_if = [p for p in possible_if if p in ['2B']]
-                    if if_skill >= 4 and premium_if:
-                        chosen_pos = random.choice(premium_if)
-                    elif if_skill <= 2 and hidden_if:
-                        chosen_pos = random.choice(hidden_if)
-                    else:
-                        chosen_pos = random.choice(possible_if)
+            if zone == "OF":
+                of_skill = p_skills["OF"]
+                premium_of = [p for p in possible_of if p in ['CF', 'LC', 'LF']]
+                hidden_of = [p for p in possible_of if p in ['RF', 'RC']]
+                if of_skill >= 4 and premium_of:
+                    chosen_pos = random.choice(premium_of)
+                elif of_skill <= 2 and hidden_of:
+                    chosen_pos = random.choice(hidden_of)
+                else:
+                    chosen_pos = random.choice(possible_of)
+            elif zone == "IF":
+                if_skill = p_skills["IF"]
+                premium_if = [p for p in possible_if if p in ['SS', '1B', '3B']]
+                hidden_if = [p for p in possible_if if p in ['2B']]
+                if if_skill >= 4 and premium_if:
+                    chosen_pos = random.choice(premium_if)
+                elif if_skill <= 2 and hidden_if:
+                    chosen_pos = random.choice(hidden_if)
+                else:
+                    chosen_pos = random.choice(possible_if)
                     
             if chosen_pos:
                 grid.at[p_id, inn] = chosen_pos
