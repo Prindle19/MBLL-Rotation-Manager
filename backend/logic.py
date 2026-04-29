@@ -85,13 +85,28 @@ def solve_rotation(active_players, league, locks, skills, pitcher_name=None, pro
                 
             benched_score = 500000 if p in benched_last else 0
             
-            times_benched = sum(1 for i in range(1, inn) if pd.isna(grid.at[p, i]) or grid.at[p, i] == "Bench")
-            total_bench_score = times_benched * 50000
+            benches_realized = sum(1 for i in range(1, inn) if pd.isna(grid.at[p, i]) or grid.at[p, i] == "Bench")
+            future_locked_benches = sum(1 for i in range(inn, 7) if grid.at[p, i] == "Bench")
+            guaranteed_benches = benches_realized + future_locked_benches
+            
+            total_bench_slots_game = max(0, (active_count * 6) - (len(all_pos) * 6))
+            max_benches = (total_bench_slots_game + active_count - 1) // active_count if active_count > 0 else 0
+            min_benches = total_bench_slots_game // active_count if active_count > 0 else 0
+            
+            total_bench_score = guaranteed_benches * 50000
+            if guaranteed_benches >= max_benches and max_benches > 0:
+                total_bench_score += 5000000
+                
+            min_bench_emergency = 0
+            if guaranteed_benches < min_benches:
+                benches_needed = min_benches - guaranteed_benches
+                if open_slots <= benches_needed:
+                    min_bench_emergency = -2000000
             
             p_skills = skills.get(p, {"IF": 3, "OF": 3})
-            skill_score = (p_skills["IF"] + p_skills["OF"]) * 100
+            skill_score = (p_skills["IF"] + p_skills["OF"]) * 1000
             
-            return urgency + benched_score + total_bench_score + skill_score + random.randint(0, 2000)
+            return urgency + benched_score + total_bench_score + min_bench_emergency + skill_score + random.randint(0, 2000)
 
         def get_position_urgency(p):
             open_slots = sum(1 for i in range(inn, 7) if pd.isna(grid.at[p, i]))

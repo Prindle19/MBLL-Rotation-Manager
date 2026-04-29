@@ -296,6 +296,9 @@ tr:hover td {
     background: white !important;
     color: black !important;
   }
+  body.hide-validation-print .validation-print-section {
+    display: none !important;
+  }
   .app-container {
     padding: 0 !important;
     margin: 0 !important;
