@@ -84,20 +84,26 @@ export default function PastGames() {
               </tr>
             </thead>
             <tbody>
-              {pastGames.map(game => (
-                <tr key={game.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                  <td style={{ padding: '8px' }}>
-                    {game.date}
-                    {game.versions?.length > 1 && (
-                      <div style={{fontSize: '11px', color: 'var(--accent)', marginTop: '4px'}}>
-                        {game.versions.length} Versions (Modified)
+              {pastGames.map(game => {
+                const isCancelled = game.status === 'Cancelled' || game.status === 'Postponed';
+                return (
+                  <tr key={game.id} style={{ borderBottom: '1px solid var(--border-color)', opacity: isCancelled ? 0.5 : 1 }}>
+                    <td style={{ padding: '8px' }}>
+                      {game.date}
+                      {game.versions?.length > 1 && (
+                        <div style={{fontSize: '11px', color: 'var(--accent)', marginTop: '4px'}}>
+                          {game.versions.length} Versions (Modified)
+                        </div>
+                      )}
+                    </td>
+                    <td style={{ padding: '8px' }}>
+                      <span style={{ textDecoration: isCancelled ? 'line-through' : 'none' }}>
+                        {allTeams.find(t => t.id === game.opponent)?.Team_Name || game.opponent}
+                      </span>
+                      <div style={{fontSize: '11px', color: isCancelled ? '#ef4444' : 'var(--text-secondary)', fontWeight: isCancelled ? 'bold' : 'normal'}}>
+                        Status: {game.status || 'Completed'}
                       </div>
-                    )}
-                  </td>
-                  <td style={{ padding: '8px' }}>
-                    {allTeams.find(t => t.id === game.opponent)?.Team_Name || game.opponent}
-                    <div style={{fontSize: '11px', color: 'var(--text-secondary)'}}>Status: {game.status || 'Completed'}</div>
-                  </td>
+                    </td>
                   <td style={{ padding: '8px', display: 'flex', gap: '8px', alignItems: 'center' }}>
                     {game.versions?.length > 1 ? (
                       <select className="select-field" style={{padding: '4px 8px', fontSize: '12px', width: 'auto'}} onChange={(e) => {
@@ -119,7 +125,7 @@ export default function PastGames() {
                     <button className="btn btn-danger" style={{ padding: '4px 8px', fontSize: '12px' }} onClick={() => deleteGameGroup(game)}>Delete</button>
                   </td>
                 </tr>
-              ))}
+              )})}
               {pastGames.length === 0 && (
                 <tr><td colSpan={3} style={{ textAlign: 'center', padding: '16px', color: 'var(--text-secondary)' }}>No saved games found.</td></tr>
               )}

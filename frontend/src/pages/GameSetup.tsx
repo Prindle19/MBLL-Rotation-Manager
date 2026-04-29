@@ -29,7 +29,7 @@ export default function GameSetup() {
   const [gameDate, setGameDate] = useState(getManasquanDate());
   const [opponent, setOpponent] = useState('');
   const [isHome, setIsHome] = useState(true);
-  const [gameStatus, setGameStatus] = useState<'Planned'|'Active'|'Completed'>('Planned');
+  const [gameStatus, setGameStatus] = useState<'Planned'|'Active'|'Completed'|'Postponed'|'Cancelled'>('Planned');
   const [currentInning, setCurrentInning] = useState(1);
   const [loadedGameId, setLoadedGameId] = useState<string | null>(null);
   
@@ -143,6 +143,7 @@ export default function GameSetup() {
       // Find the most recent game BEFORE or ON the selectedDate where they pitched (excluding the game currently being edited)
       for (const game of pastGames) {
         if ((game.parent_game_id || game.id) === loadedGameId) continue;
+        if (game.status === 'Postponed' || game.status === 'Cancelled') continue;
         
         const gDate = new Date(game.date);
         gDate.setHours(0,0,0,0);
@@ -570,6 +571,8 @@ export default function GameSetup() {
           <option value="Planned">Planned</option>
           <option value="Active">Active</option>
           <option value="Completed">Completed</option>
+          <option value="Postponed">Postponed</option>
+          <option value="Cancelled">Cancelled</option>
         </select>
         {gameStatus === 'Active' && (
           <div style={{display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(59, 130, 246, 0.1)', padding: '4px 12px', borderRadius: '8px', border: '1px solid var(--accent)'}}>

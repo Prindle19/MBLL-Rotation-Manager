@@ -176,10 +176,16 @@ export default function PitchCounts() {
           <div style={{display: 'flex', flexDirection: 'column', gap: '16px'}}>
             {games.map(g => {
               const oppName = allTeams.find(t => t.id === g.opponent)?.Team_Name || g.opponent || 'Unknown Opponent';
+              const isCancelled = g.status === 'Cancelled' || g.status === 'Postponed';
               return (
-                <div key={g.id} style={{background: 'rgba(15,23,42,0.8)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)', position: 'relative'}}>
+                <div key={g.id} style={{background: 'rgba(15,23,42,0.8)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)', position: 'relative', opacity: isCancelled ? 0.5 : 1}}>
                   <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px'}}>
-                    <h3 style={{margin: 0}}>{g.date} vs {oppName}</h3>
+                    <h3 style={{margin: 0, textDecoration: isCancelled ? 'line-through' : 'none'}}>
+                      {g.date} vs {oppName}
+                      <span style={{fontSize: '12px', color: isCancelled ? '#ef4444' : 'var(--text-secondary)', marginLeft: '8px', textDecoration: 'none', fontWeight: isCancelled ? 'bold' : 'normal'}}>
+                        ({g.status || 'Completed'})
+                      </span>
+                    </h3>
                     <button 
                       className="btn" 
                       style={{padding: '4px 8px', fontSize: '12px'}} 
