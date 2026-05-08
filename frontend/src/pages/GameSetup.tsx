@@ -79,6 +79,20 @@ export default function GameSetup() {
         });
         
         setPastGames(grouped);
+
+        const isNavigatingFromPastGame = !!location.state?.gameToLoad;
+        
+        if (isNavigatingFromPastGame) {
+          const gameToLoad = location.state.gameToLoad;
+          if (gameToLoad.activePlayers) {
+            const loadedIds = new Set(gameToLoad.activePlayers.map((p:any) => p.id));
+            const missingPlayers = r.filter((p:any) => !loadedIds.has(p.id)).map((p:any) => ({...p, isActive: false}));
+            if (missingPlayers.length > 0) {
+              setActivePlayers([...gameToLoad.activePlayers, ...missingPlayers]);
+            }
+          }
+          return;
+        }
         
         if (grouped.length > 0) {
           const lastGame = grouped[0];
