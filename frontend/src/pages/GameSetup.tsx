@@ -41,7 +41,6 @@ export default function GameSetup() {
   const [isHomeG2, setIsHomeG2] = useState(false);
   const [gameStatusG2, setGameStatusG2] = useState<'Planned'|'Active'|'Completed'|'Postponed'|'Cancelled'>('Planned');
   const [currentInningG2, setCurrentInningG2] = useState(1);
-  const [activeTab, setActiveTab] = useState<'game1' | 'game2'>('game1');
 
   const handleToggleDoubleHeader = (checked: boolean) => {
     setIsDoubleHeader(checked);
@@ -52,7 +51,6 @@ export default function GameSetup() {
       setOpponentG2(opponent); // default to same opponent
     } else {
       setNumInnings(6);
-      setActiveTab('game1');
     }
   };
   
@@ -171,7 +169,6 @@ export default function GameSetup() {
       setIsHomeG2(game.isHomeG2 ?? false);
       setGameStatusG2(game.statusG2 || 'Planned');
       setCurrentInningG2(game.currentInningG2 || 1);
-      setActiveTab('game1');
       
       // Clear the state so it doesn't reload if the user navigates away and back
       window.history.replaceState({}, document.title)
@@ -515,18 +512,29 @@ export default function GameSetup() {
 
   if (!team) return <div className="glass-panel" style={{textAlign: 'center', padding: '50px'}}>You need an Admin to assign you to a Team before setting up a game.</div>;
 
-  const visibleInnings = isDoubleHeader
-    ? (activeTab === 'game1'
-        ? Array.from({ length: numInnings }, (_, idx) => idx + 1)
-        : Array.from({ length: numInningsG2 }, (_, idx) => idx + 1))
-    : Array.from({ length: numInnings }, (_, idx) => idx + 1);
+  interface InningColumn {
+    gameIndex: 1 | 2;
+    displayInning: number;
+    backendInningStr: string;
+  }
 
-  const getBackendInningStr = (displayInn: number) => {
-    if (isDoubleHeader && activeTab === 'game2') {
-      return (numInnings + displayInn).toString();
+  const inningColumns: InningColumn[] = [];
+  for (let i = 1; i <= numInnings; i++) {
+    inningColumns.push({
+      gameIndex: 1,
+      displayInning: i,
+      backendInningStr: i.toString()
+    });
+  }
+  if (isDoubleHeader) {
+    for (let i = 1; i <= numInningsG2; i++) {
+      inningColumns.push({
+        gameIndex: 2,
+        displayInning: i,
+        backendInningStr: (numInnings + i).toString()
+      });
     }
-    return displayInn.toString();
-  };
+  }
 
   const playerSits = activePlayers.filter(p => p.isActive).map(p => {
     const stats = getPlayerStats(p.id);
@@ -807,17 +815,19 @@ export default function GameSetup() {
             Double-Header
           </label>
           
-          <div style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
-            <span style={{fontSize: '14px', color: 'var(--text-secondary)'}}>Game 1 Innings:</span>
-            <select 
-              className="select-field" 
-              style={{width: 'auto', padding: '4px 8px'}} 
-              value={numInnings} 
-              onChange={e => setNumInnings(parseInt(e.target.value))}
-            >
-              {[3,4,5,6].map(i => <option key={i} value={i}>{i} Innings</option>)}
-            </select>
-          </div>
+          {isDoubleHeader && (
+            <div style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
+              <span style={{fontSize: '14px', color: 'var(--text-secondary)'}}>Game 1 Innings:</span>
+              <select 
+                className="select-field" 
+                style={{width: 'auto', padding: '4px 8px'}} 
+                value={numInnings} 
+                onChange={e => setNumInnings(parseInt(e.target.value))}
+              >
+                {[3,4,5,6].map(i => <option key={i} value={i}>{i} Innings</option>)}
+              </select>
+            </div>
+          )}
           
           <div style={{display: 'flex', flexDirection: 'column', gap: '2px'}}>
             <input type="date" className="input-field" style={{width: 'auto'}} value={gameDate} onChange={e => setGameDate(e.target.value)} />
@@ -828,7 +838,7 @@ export default function GameSetup() {
         </div>
 
         <div style={{borderTop: '1px solid var(--border-color)', paddingTop: '16px', display: 'flex', gap: '16px', flexDirection: 'column'}}>
-          <h4 style={{margin: 0, color: 'var(--accent)'}}>Game 1 Matchup: {opponent ? `${matchTitle} (${numInnings} inn)` : 'Not Configured'}</h4>
+          <h4 style={{margin: 0, color: 'var(--accent)'}}>{isDoubleHeader ? 'Game 1 Matchup' : 'Game Matchup'}: {opponent ? `${matchTitle} (${numInnings} inn)` : 'Not Configured'}</h4>
           <div style={{display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap'}}>
             <select className="select-field" style={{width: 'auto'}} value={isHome ? 'home' : 'away'} onChange={e => setIsHome(e.target.value === 'home')}>
               <option value="home">Home</option>
@@ -992,52 +1002,45 @@ export default function GameSetup() {
             The generator will not automatically assign these unique positions.
           </p>
 
-          {isDoubleHeader && (
-            <div style={{display: 'flex', gap: '8px', marginBottom: '16px'}}>
-              <button 
-                className="btn" 
-                style={{
-                  background: activeTab === 'game1' ? 'var(--accent)' : 'var(--panel-bg)',
-                  color: 'white',
-                  border: activeTab === 'game1' ? 'none' : '1px solid var(--border-color)',
-                  padding: '6px 16px',
-                  borderRadius: '20px'
-                }}
-                onClick={() => setActiveTab('game1')}
-              >
-                Game 1 Rotation
-              </button>
-              <button 
-                className="btn" 
-                style={{
-                  background: activeTab === 'game2' ? 'var(--accent)' : 'var(--panel-bg)',
-                  color: 'white',
-                  border: activeTab === 'game2' ? 'none' : '1px solid var(--border-color)',
-                  padding: '6px 16px',
-                  borderRadius: '20px'
-                }}
-                onClick={() => setActiveTab('game2')}
-              >
-                Game 2 Rotation
-              </button>
-            </div>
-          )}
-
           <div className="table-container">
             <table>
               <thead>
+                {isDoubleHeader && (
+                  <tr>
+                    <th rowSpan={2} style={{ borderBottom: '2px solid var(--border-color)', verticalAlign: 'bottom' }}>Player</th>
+                    <th colSpan={numInnings} style={{ textAlign: 'center', borderBottom: '2px solid var(--accent)', color: 'var(--accent)', fontWeight: 'bold', fontSize: '14px', paddingBottom: '8px' }}>
+                      Game 1 Rotation
+                    </th>
+                    <th colSpan={numInningsG2} style={{ textAlign: 'center', borderBottom: '2px solid #8b5cf6', color: '#8b5cf6', fontWeight: 'bold', fontSize: '14px', paddingBottom: '8px', borderLeft: '2px solid var(--border-color)' }}>
+                      Game 2 Rotation
+                    </th>
+                  </tr>
+                )}
                 <tr>
-                  <th>Player</th>
-                  {visibleInnings.map(i => {
-                    const backendInnStr = getBackendInningStr(i);
+                  {!isDoubleHeader && <th>Player</th>}
+                  {inningColumns.map((col, idx) => {
                     let hasP = false;
                     let hasC = false;
                     Object.values(locks).forEach(playerLocks => {
-                      if (playerLocks[backendInnStr] === 'P') hasP = true;
-                      if (playerLocks[backendInnStr] === 'C') hasC = true;
+                      if (playerLocks[col.backendInningStr] === 'P') hasP = true;
+                      if (playerLocks[col.backendInningStr] === 'C') hasC = true;
                     });
                     const isMissingBattery = !(hasP && hasC);
-                    return <th key={i} style={{textAlign: 'center', color: isMissingBattery ? '#ef4444' : 'var(--text-secondary)'}}>{i}</th>
+                    const borderLeft = isDoubleHeader && col.gameIndex === 2 && col.displayInning === 1 
+                      ? '2px solid var(--border-color)' 
+                      : '';
+                    return (
+                      <th 
+                        key={idx} 
+                        style={{
+                          textAlign: 'center', 
+                          color: isMissingBattery ? '#ef4444' : 'var(--text-secondary)',
+                          borderLeft
+                        }}
+                      >
+                        {col.displayInning}
+                      </th>
+                    );
                   })}
                 </tr>
               </thead>
@@ -1055,42 +1058,44 @@ export default function GameSetup() {
                           </div>
                         </div>
                       </td>
-                      {visibleInnings.map(i => {
-                        const backendInnStr = getBackendInningStr(i);
-                        const currentVal = locks[p.id]?.[backendInnStr] || row[backendInnStr] || '';
-                        const isAlgo = !locks[p.id]?.[backendInnStr] && !!row[backendInnStr];
+                      {inningColumns.map((col, idx) => {
+                        const currentVal = locks[p.id]?.[col.backendInningStr] || row[col.backendInningStr] || '';
+                        const isAlgo = !locks[p.id]?.[col.backendInningStr] && !!row[col.backendInningStr];
                         const isHighIF = ['1B', '2B', '3B', 'SS'].includes(currentVal) && (p.skillInfield >= 4);
                         const shouldGlow = isAlgo && isHighIF;
-                        const currentStatus = isDoubleHeader && activeTab === 'game2' ? gameStatusG2 : gameStatus;
-                        const currentInnVal = isDoubleHeader && activeTab === 'game2' ? currentInningG2 : currentInning;
-                        
+                        const currentStatus = col.gameIndex === 2 ? gameStatusG2 : gameStatus;
+                        const currentInnVal = col.gameIndex === 2 ? currentInningG2 : currentInning;
+                        const borderLeft = isDoubleHeader && col.gameIndex === 2 && col.displayInning === 1 
+                          ? '2px solid var(--border-color)' 
+                          : '';
+
                         return (
-                        <td key={i} align="center">
-                          <select 
-                            className="select-field" 
-                            style={{
-                              width: '70px', 
-                              padding: '4px', 
-                              fontSize: '12px',
-                              border: locks[p.id]?.[backendInnStr] ? '1px solid var(--accent)' : (shouldGlow ? '1px solid rgba(251, 191, 36, 0.8)' : '1px solid var(--border-color)'),
-                              background: locks[p.id]?.[backendInnStr] ? 'rgba(59, 130, 246, 0.2)' : 'transparent',
-                              boxShadow: shouldGlow ? '0 0 10px rgba(251, 191, 36, 0.3), inset 0 0 4px rgba(251, 191, 36, 0.2)' : 'none'
-                            }}
-                            value={currentVal}
-                            onChange={(e) => updateLock(p.id, backendInnStr, e.target.value)}
-                          >
-                            <option value="">--</option>
-                            {positions.map(pos => (
-                              <option 
-                                key={pos} 
-                                value={pos} 
-                                disabled={(pos === 'P' && !!pitchWarnings[p.id]) || (currentStatus === 'Active' && parseInt(backendInnStr) < currentInnVal)}
-                              >
-                                {pos}
-                              </option>
-                            ))}
-                          </select>
-                        </td>
+                          <td key={idx} align="center" style={{ borderLeft }}>
+                            <select 
+                              className="select-field" 
+                              style={{
+                                width: '70px', 
+                                padding: '4px', 
+                                fontSize: '12px',
+                                border: locks[p.id]?.[col.backendInningStr] ? '1px solid var(--accent)' : (shouldGlow ? '1px solid rgba(251, 191, 36, 0.8)' : '1px solid var(--border-color)'),
+                                background: locks[p.id]?.[col.backendInningStr] ? 'rgba(59, 130, 246, 0.2)' : 'transparent',
+                                boxShadow: shouldGlow ? '0 0 10px rgba(251, 191, 36, 0.3), inset 0 0 4px rgba(251, 191, 36, 0.2)' : 'none'
+                              }}
+                              value={currentVal}
+                              onChange={(e) => updateLock(p.id, col.backendInningStr, e.target.value)}
+                            >
+                              <option value="">--</option>
+                              {positions.map(pos => (
+                                <option 
+                                  key={pos} 
+                                  value={pos} 
+                                  disabled={(pos === 'P' && !!pitchWarnings[p.id]) || (currentStatus === 'Active' && (col.gameIndex === 1 ? parseInt(col.backendInningStr) < currentInnVal : col.displayInning < currentInnVal))}
+                                >
+                                  {pos}
+                                </option>
+                              ))}
+                            </select>
+                          </td>
                         );
                       })}
                     </tr>
