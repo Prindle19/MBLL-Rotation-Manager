@@ -98,10 +98,13 @@ export default function PastGames() {
                     </td>
                     <td style={{ padding: '8px' }}>
                       <span style={{ textDecoration: isCancelled ? 'line-through' : 'none' }}>
-                        {allTeams.find(t => t.id === game.opponent)?.Team_Name || game.opponent}
+                        {game.isDoubleHeader 
+                          ? `Double-Header: vs ${allTeams.find(t => t.id === game.opponent)?.Team_Name || game.opponent} & ${allTeams.find(t => t.id === game.opponentG2)?.Team_Name || game.opponentG2}`
+                          : (allTeams.find(t => t.id === game.opponent)?.Team_Name || game.opponent)
+                        }
                       </span>
                       <div style={{fontSize: '11px', color: isCancelled ? '#ef4444' : 'var(--text-secondary)', fontWeight: isCancelled ? 'bold' : 'normal'}}>
-                        Status: {game.status || 'Completed'}
+                        Status: {game.isDoubleHeader ? `G1: ${game.status || 'Completed'} | G2: ${game.statusG2 || 'Completed'}` : (game.status || 'Completed')}
                       </div>
                     </td>
                   <td style={{ padding: '8px', display: 'flex', gap: '8px', alignItems: 'center' }}>

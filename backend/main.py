@@ -185,6 +185,9 @@ class RotationRequest(BaseModel):
     projected_pitches: int = 0
     active_count: int = 10
     ineligible_pitchers: list[str] = []
+    num_innings: int = 6
+    is_double_header: bool = False
+    num_innings_g2: int = 4
 
 @app.post("/api/generate_rotation")
 def generate_rotation_api(req: RotationRequest, user: dict = Depends(require_coach_or_admin)):
@@ -197,17 +200,19 @@ def generate_rotation_api(req: RotationRequest, user: dict = Depends(require_coa
             req.target_pitcher, 
             req.projected_pitches,
             req.active_count,
-            req.ineligible_pitchers
+            req.ineligible_pitchers,
+            req.num_innings,
+            req.is_double_header,
+            req.num_innings_g2
         )
         
         # Convert df to list of dicts for frontend
         result = []
         for player_id, row in grid_df.iterrows():
-            result.append({
-                "id": player_id,
-                "1": row[1], "2": row[2], "3": row[3],
-                "4": row[4], "5": row[5], "6": row[6]
-            })
+            player_row = {"id": player_id}
+            for col in grid_df.columns:
+                player_row[str(col)] = row[col]
+            result.append(player_row)
             
         return {"rotation": result}
     except Exception as e:

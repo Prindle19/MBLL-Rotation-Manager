@@ -1,10 +1,18 @@
 import pandas as pd
 import random
 
-def solve_rotation(active_players, league, locks, skills, pitcher_name=None, projected_pitches=0, active_count=10, ineligible_pitchers=None):
+def solve_rotation(active_players, league, locks, skills, pitcher_name=None, projected_pitches=0, active_count=10, ineligible_pitchers=None, num_innings=6, is_double_header=False, num_innings_g2=4):
     if ineligible_pitchers is None:
         ineligible_pitchers = []
-    innings = [1, 2, 3, 4, 5, 6]
+    
+    num_innings = int(num_innings)
+    num_innings_g2 = int(num_innings_g2)
+    
+    total_innings = num_innings
+    if is_double_header:
+        total_innings = num_innings + num_innings_g2
+        
+    innings = list(range(1, total_innings + 1))
     
     if league == "Minors":
         if_pos = ['P', 'C', '1B', '2B', '3B', 'SS'] 
@@ -26,24 +34,35 @@ def solve_rotation(active_players, league, locks, skills, pitcher_name=None, pro
             for inn_str, pos in p_locks.items():
                 if pos == '': continue
                 inn = int(inn_str)
-                if p_id in active_players:
+                if p_id in active_players and inn in innings:
                     grid.at[p_id, inn] = pos
-
-    # Track counts
-    if_counts = {p: 0 for p in active_players}
-    of_counts = {p: 0 for p in active_players}
-
-    # Pre-count locks
-    for p in active_players:
-        for inn in innings:
-            pos = grid.at[p, inn]
-            if pd.notna(pos):
-                if pos in if_pos: if_counts[p] += 1
-                elif pos in of_pos: of_counts[p] += 1
 
     for inn in innings:
         available_slots = all_pos.copy()
         
+        # Determine which game the current inning belongs to and the corresponding innings list
+        if is_double_header:
+            if inn <= num_innings:
+                g_inns = list(range(1, num_innings + 1))
+            else:
+                g_inns = list(range(num_innings + 1, total_innings + 1))
+        else:
+            g_inns = innings
+            
+        # Calculate counts so far in the current game
+        if_counts_game = {}
+        of_counts_game = {}
+        for p in active_players:
+            if_cnt = 0
+            of_cnt = 0
+            for i in g_inns:
+                pos = grid.at[p, i]
+                if pd.notna(pos):
+                    if pos in if_pos: if_cnt += 1
+                    elif pos in of_pos: of_cnt += 1
+            if_counts_game[p] = if_cnt
+            of_counts_game[p] = of_cnt
+            
         # Remove locked slots from available
         for p_id in active_players:
             pos = grid.at[p_id, inn]
@@ -68,40 +87,64 @@ def solve_rotation(active_players, league, locks, skills, pitcher_name=None, pro
                     benched_last.add(p)
                     
         def get_bench_urgency(p):
-            open_slots = sum(1 for i in range(inn, 7) if pd.isna(grid.at[p, i]))
-            needs_of_flag = of_counts[p] < 1 and not str(p).startswith("sub_")
-            needs_if_flag = (if_counts[p] < 2 if league == "Minors" else False) and not str(p).startswith("sub_")
+            open_slots_game = sum(1 for i in g_inns if i >= inn and pd.isna(grid.at[p, i]))
+            needs_of_flag = of_counts_game[p] < 1 and not str(p).startswith("sub_")
+            
+            if is_double_header:
+                min_if = 3
+            else:
+                min_if = 2 if league == "Minors" else 0
+                
+            needs_if_flag = if_counts_game[p] < min_if and not str(p).startswith("sub_")
             
             reqs_needed = 0
             if needs_of_flag: reqs_needed += 1
             if needs_if_flag: reqs_needed += 1
             
             urgency = 0
-            if reqs_needed > 0 and reqs_needed >= open_slots:
-                urgency = 1000000 + (reqs_needed * 1000) - open_slots
+            if reqs_needed > 0 and reqs_needed >= open_slots_game:
+                urgency = 1000000 + (reqs_needed * 1000) - open_slots_game
             else:
-                # Not an emergency. Let skill dictate benching primarily.
-                urgency = 1000 + (reqs_needed * 50) - open_slots
+                urgency = 1000 + (reqs_needed * 50) - open_slots_game
                 
             benched_score = 500000 if p in benched_last else 0
             
+            # Bench calculations are tracked for the whole day
             benches_realized = sum(1 for i in range(1, inn) if pd.isna(grid.at[p, i]) or grid.at[p, i] == "Bench")
-            future_locked_benches = sum(1 for i in range(inn, 7) if grid.at[p, i] == "Bench")
+            future_locked_benches = sum(1 for i in range(inn, total_innings + 1) if grid.at[p, i] == "Bench")
             guaranteed_benches = benches_realized + future_locked_benches
             
-            total_bench_slots_game = max(0, (active_count * 6) - (len(all_pos) * 6))
-            max_benches = (total_bench_slots_game + active_count - 1) // active_count if active_count > 0 else 0
-            min_benches = total_bench_slots_game // active_count if active_count > 0 else 0
+            total_bench_slots_day = max(0, (active_count * total_innings) - (len(all_pos) * total_innings))
+            max_benches = (total_bench_slots_day + active_count - 1) // active_count if active_count > 0 else 0
+            min_benches = total_bench_slots_day // active_count if active_count > 0 else 0
             
             total_bench_score = guaranteed_benches * 50000
             if guaranteed_benches >= max_benches and max_benches > 0:
                 total_bench_score += 5000000
                 
             min_bench_emergency = 0
+            open_slots_day = sum(1 for i in range(inn, total_innings + 1) if pd.isna(grid.at[p, i]))
             if guaranteed_benches < min_benches:
                 benches_needed = min_benches - guaranteed_benches
-                if open_slots <= benches_needed:
+                if open_slots_day <= benches_needed:
                     min_bench_emergency = -2000000
+            
+            # Double-header benching constraint:
+            # "a player can't sit twice until all players have sat one inning for the whole day, not by game"
+            if is_double_header and not str(p).startswith("sub_"):
+                committed_sits = {}
+                for pl in active_players:
+                    if str(pl).startswith("sub_"):
+                        committed_sits[pl] = 999
+                        continue
+                    b_real = sum(1 for i in range(1, inn) if pd.isna(grid.at[pl, i]) or grid.at[pl, i] == "Bench")
+                    b_fut = sum(1 for i in range(inn, total_innings + 1) if grid.at[pl, i] == "Bench")
+                    committed_sits[pl] = b_real + b_fut
+                
+                any_zero_sits = any(committed_sits[pl] == 0 for pl in active_players if not str(pl).startswith("sub_"))
+                if any_zero_sits and committed_sits[p] >= 1:
+                    # Player already sat, but someone has sat 0 times, so force this player to play
+                    urgency += 10000000
             
             p_skills = skills.get(p, {"IF": 3, "OF": 3})
             skill_score = (p_skills["IF"] + p_skills["OF"]) * 1000
@@ -109,9 +152,15 @@ def solve_rotation(active_players, league, locks, skills, pitcher_name=None, pro
             return urgency + benched_score + total_bench_score + min_bench_emergency + skill_score + random.randint(0, 2000)
 
         def get_position_urgency(p):
-            open_slots = sum(1 for i in range(inn, 7) if pd.isna(grid.at[p, i]))
-            needs_of_flag = of_counts[p] < 1 and not str(p).startswith("sub_")
-            needs_if_flag = (if_counts[p] < 2 if league == "Minors" else False) and not str(p).startswith("sub_")
+            open_slots = sum(1 for i in g_inns if i >= inn and pd.isna(grid.at[p, i]))
+            needs_of_flag = of_counts_game[p] < 1 and not str(p).startswith("sub_")
+            
+            if is_double_header:
+                min_if = 3
+            else:
+                min_if = 2 if league == "Minors" else 0
+                
+            needs_if_flag = if_counts_game[p] < min_if and not str(p).startswith("sub_")
             
             reqs_needed = 0
             if needs_of_flag: reqs_needed += 1
@@ -126,7 +175,7 @@ def solve_rotation(active_players, league, locks, skills, pitcher_name=None, pro
                 base = 1000 - open_slots
                 
             p_skills = skills.get(p, {"IF": 3, "OF": 3})
-            if p_skills["IF"] > 3 and of_counts[p] >= 1 and reqs_needed == 0:
+            if p_skills["IF"] > 3 and of_counts_game[p] >= 1 and reqs_needed == 0:
                 base += 5000
                 
             # Prioritize weak IF players to pick their positions first when they need IF
@@ -153,8 +202,14 @@ def solve_rotation(active_players, league, locks, skills, pitcher_name=None, pro
             
             # Determine needs
             is_sub = str(p_id).startswith("sub_")
-            needs_of = of_counts[p_id] < 1 or is_sub
-            needs_if = (if_counts[p_id] < 2 if league == "Minors" else False) and not is_sub
+            needs_of = of_counts_game[p_id] < 1 or is_sub
+            
+            if is_double_header:
+                min_if = 3
+            else:
+                min_if = 2 if league == "Minors" else 0
+                
+            needs_if = (if_counts_game[p_id] < min_if) and not is_sub
             
             chosen_pos = None
             
@@ -167,14 +222,14 @@ def solve_rotation(active_players, league, locks, skills, pitcher_name=None, pro
             possible_of = [s for s in player_slots if s in of_pos]
             
             # Enforce rule: >3 IF skill should only play 1 OF inning max
-            if p_skills["IF"] > 3 and of_counts[p_id] >= 1 and possible_if:
+            if p_skills["IF"] > 3 and of_counts_game[p_id] >= 1 and possible_if:
                 possible_of = []
                 
             # Prevent players from taking OF if they don't strictly need it, 
             # AND doing so would steal it from someone who DOES need it.
             if not needs_of and possible_of and possible_if:
                 idx = playing_players.index(p_id)
-                unassigned_need_of = sum(1 for p in playing_players[idx+1:] if pd.isna(grid.at[p, inn]) and of_counts[p] < 1 and not str(p).startswith("sub_"))
+                unassigned_need_of = sum(1 for p in playing_players[idx+1:] if pd.isna(grid.at[p, inn]) and of_counts_game[p] < 1 and not str(p).startswith("sub_"))
                 if len(possible_of) <= unassigned_need_of:
                     possible_of = []
             
@@ -186,8 +241,8 @@ def solve_rotation(active_players, league, locks, skills, pitcher_name=None, pro
             elif needs_if and possible_if:
                 # If they are a weak infielder, try to wait for 2B unless it's an emergency
                 if p_skills["IF"] <= 2 and '2B' not in possible_if:
-                    open_slots = sum(1 for i in range(inn, 7) if pd.isna(grid.at[p_id, i]))
-                    reqs = (2 - if_counts[p_id]) if league == "Minors" else 0
+                    open_slots = sum(1 for i in g_inns if i >= inn and pd.isna(grid.at[p_id, i]))
+                    reqs = min_if - if_counts_game[p_id]
                     if open_slots > reqs and possible_of:
                         zone = "OF"
                     else:
@@ -229,10 +284,5 @@ def solve_rotation(active_players, league, locks, skills, pitcher_name=None, pro
             if chosen_pos:
                 grid.at[p_id, inn] = chosen_pos
                 available_slots.remove(chosen_pos)
-            
-            if chosen_pos in if_pos:
-                if_counts[p_id] += 1
-            elif chosen_pos in of_pos:
-                of_counts[p_id] += 1
 
     return grid.fillna("Bench")

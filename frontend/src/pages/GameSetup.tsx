@@ -32,6 +32,29 @@ export default function GameSetup() {
   const [gameStatus, setGameStatus] = useState<'Planned'|'Active'|'Completed'|'Postponed'|'Cancelled'>('Planned');
   const [currentInning, setCurrentInning] = useState(1);
   const [loadedGameId, setLoadedGameId] = useState<string | null>(null);
+
+  // Double-header and Dynamic Innings States
+  const [isDoubleHeader, setIsDoubleHeader] = useState(false);
+  const [numInnings, setNumInnings] = useState(6);
+  const [numInningsG2, setNumInningsG2] = useState(4);
+  const [opponentG2, setOpponentG2] = useState('');
+  const [isHomeG2, setIsHomeG2] = useState(false);
+  const [gameStatusG2, setGameStatusG2] = useState<'Planned'|'Active'|'Completed'|'Postponed'|'Cancelled'>('Planned');
+  const [currentInningG2, setCurrentInningG2] = useState(1);
+  const [activeTab, setActiveTab] = useState<'game1' | 'game2'>('game1');
+
+  const handleToggleDoubleHeader = (checked: boolean) => {
+    setIsDoubleHeader(checked);
+    if (checked) {
+      setNumInnings(4);
+      setNumInningsG2(4);
+      setIsHomeG2(!isHome); // default to opposite of Game 1
+      setOpponentG2(opponent); // default to same opponent
+    } else {
+      setNumInnings(6);
+      setActiveTab('game1');
+    }
+  };
   
   // Rotation state
   const [locks, setLocks] = useState<Record<string, Record<string, string>>>({});
@@ -139,6 +162,16 @@ export default function GameSetup() {
       setLocks(game.locks || {});
       setRotation(game.rotation || []);
       setValidationMsg(`✅ Loaded game from ${game.date}`);
+
+      // Double-header and dynamic innings states
+      setIsDoubleHeader(game.isDoubleHeader || false);
+      setNumInnings(game.numInnings || 6);
+      setNumInningsG2(game.numInningsG2 || 4);
+      setOpponentG2(game.opponentG2 || '');
+      setIsHomeG2(game.isHomeG2 ?? false);
+      setGameStatusG2(game.statusG2 || 'Planned');
+      setCurrentInningG2(game.currentInningG2 || 1);
+      setActiveTab('game1');
       
       // Clear the state so it doesn't reload if the user navigates away and back
       window.history.replaceState({}, document.title)
@@ -166,6 +199,9 @@ export default function GameSetup() {
         let pitchCount = 0;
         if (game.pitchCounts && game.pitchCounts[p.id]) {
           pitchCount = game.pitchCounts[p.id];
+        }
+        if (game.isDoubleHeader && game.pitchCountsG2 && game.pitchCountsG2[p.id]) {
+          pitchCount += game.pitchCountsG2[p.id];
         }
         
         if (pitchCount > 0) {
@@ -248,7 +284,8 @@ export default function GameSetup() {
 
   const getEstPitches = (playerId: string) => {
     let pCount = 0;
-    for (let i = 1; i <= 6; i++) {
+    const totalInns = isDoubleHeader ? (numInnings + numInningsG2) : numInnings;
+    for (let i = 1; i <= totalInns; i++) {
       const pos = locks[playerId]?.[i] || rotation.find(r => r.id === playerId)?.[i.toString()];
       if (pos === 'P') pCount++;
     }
@@ -256,30 +293,49 @@ export default function GameSetup() {
   };
 
   const getPlayerStats = (playerId: string) => {
-    let ifCount = 0;
-    let ofCount = 0;
-    let benchCount = 0;
-    
     const pLocks = locks[playerId] || {};
     const row = rotation.find(r => r.id === playerId) || {};
     
     const ifPositions = ['P', 'C', '1B', '2B', '3B', 'SS'];
     const ofPositions = ['LF', 'LC', 'RC', 'RF', 'CF'];
 
-    for (let i = 1; i <= 6; i++) {
-      const pos = pLocks[i] || row[i.toString()];
-      if (ifPositions.includes(pos)) ifCount++;
-      else if (ofPositions.includes(pos)) ofCount++;
-      else if (pos === 'Bench') benchCount++;
-    }
+    const getStatsForInnings = (gInns: number[]) => {
+      let ifCount = 0;
+      let ofCount = 0;
+      let benchCount = 0;
+      for (const i of gInns) {
+        const pos = pLocks[i.toString()] || row[i.toString()];
+        if (ifPositions.includes(pos)) ifCount++;
+        else if (ofPositions.includes(pos)) ofCount++;
+        else if (pos === 'Bench') benchCount++;
+      }
+      return { ifCount, ofCount, benchCount };
+    };
 
-    const minIF = team?.League === 'Minors' ? 2 : 0;
+    const g1Inns = Array.from({ length: numInnings }, (_, idx) => idx + 1);
+    const g2Inns = isDoubleHeader ? Array.from({ length: numInningsG2 }, (_, idx) => numInnings + idx + 1) : [];
+
+    const g1 = getStatsForInnings(g1Inns);
+    const g2 = getStatsForInnings(g2Inns);
+
     const minOF = 1;
+    const minIF = isDoubleHeader ? 3 : (team?.League === 'Minors' ? 2 : 0);
 
-    const meetsIF = ifCount >= minIF;
-    const meetsOF = ofCount >= minOF;
+    const meetsIFG1 = g1.ifCount >= minIF;
+    const meetsOFG1 = g1.ofCount >= minOF;
+    const meetsIFG2 = !isDoubleHeader || g2.ifCount >= minIF;
+    const meetsOFG2 = !isDoubleHeader || g2.ofCount >= minOF;
     
-    return { ifCount, ofCount, benchCount, meetsIF, meetsOF, minIF, minOF };
+    return { 
+      g1, 
+      g2, 
+      meetsIFG1, 
+      meetsOFG1, 
+      meetsIFG2, 
+      meetsOFG2, 
+      minIF, 
+      minOF 
+    };
   };
 
   const getMaxPitches = (age: number) => {
@@ -306,17 +362,31 @@ export default function GameSetup() {
         });
       }
     }
+    if (isDoubleHeader && gameStatusG2 === 'Active' && currentInningG2 > 1) {
+      for (let i = 1; i < currentInningG2; i++) {
+        const innIndex = numInnings + i;
+        rotation.forEach(r => {
+          const pos = r[innIndex.toString()];
+          if (pos) {
+            if (!effectiveLocks[r.id]) effectiveLocks[r.id] = {};
+            effectiveLocks[r.id][innIndex.toString()] = pos;
+          }
+        });
+      }
+    }
 
-    // Check if Pitcher and Catcher are locked for all 6 innings
-    const isBatterySet = [1, 2, 3, 4, 5, 6].every(inn => {
+    const totalInns = isDoubleHeader ? (numInnings + numInningsG2) : numInnings;
+
+    // Check if Pitcher and Catcher are locked for all active innings
+    const isBatterySet = Array.from({ length: totalInns }, (_, idx) => idx + 1).every(inn => {
       let hasP = false;
       let hasC = false;
       
       activePlayers.filter(p => p.isActive).forEach(p => {
         const pLocks = effectiveLocks[p.id];
         if (pLocks) {
-          if (pLocks[inn] === 'P') hasP = true;
-          if (pLocks[inn] === 'C') hasC = true;
+          if (pLocks[inn.toString()] === 'P') hasP = true;
+          if (pLocks[inn.toString()] === 'C') hasC = true;
         }
       });
       
@@ -324,40 +394,52 @@ export default function GameSetup() {
     });
 
     if (!isBatterySet) {
-      setValidationMsg('❌ ERROR: Please lock a Pitcher (P) and Catcher (C) for all 6 innings before generating.');
+      const msg = isDoubleHeader 
+        ? `❌ ERROR: Please lock a Pitcher (P) and Catcher (C) for all Game 1 and Game 2 innings before generating.`
+        : `❌ ERROR: Please lock a Pitcher (P) and Catcher (C) for all ${numInnings} innings before generating.`;
+      setValidationMsg(msg);
       setGenerating(false);
       return;
     }
 
-    // Mathematical validation: Prevent locks that make it impossible to fulfill positional requirements
-    for (const player of activePlayers) {
-      if (!player.isActive || player.id.startsWith("sub_")) continue;
-      
-      let lockedIF = 0;
-      let lockedOF = 0;
-      let openSlots = 6;
-      
-      const pLocks = effectiveLocks[player.id] || {};
-      for (let i = 1; i <= 6; i++) {
-        const pos = pLocks[i];
-        if (pos) {
-          openSlots--;
-          if (['P', 'C', '1B', '2B', '3B', 'SS'].includes(pos)) lockedIF++;
-          else if (['LF', 'LC', 'RC', 'RF', 'CF'].includes(pos)) lockedOF++;
+    // Mathematical validation: Prevent locks that make it impossible to fulfill outfield requirement (1 inning per game)
+    const validateGameLocks = (gInns: number[], gameName: string) => {
+      for (const player of activePlayers) {
+        if (!player.isActive || player.id.startsWith("sub_")) continue;
+        
+        let lockedOF = 0;
+        let openSlots = gInns.length;
+        
+        const pLocks = effectiveLocks[player.id] || {};
+        for (const inn of gInns) {
+          const pos = pLocks[inn.toString()];
+          if (pos) {
+            openSlots--;
+            if (['LF', 'LC', 'RC', 'RF', 'CF'].includes(pos)) {
+              lockedOF++;
+            }
+          }
+        }
+        
+        const minOF = 1;
+        if (lockedOF + openSlots < minOF) {
+          return `❌ ERROR: ${player.name} has too many locked innings in ${gameName} to fulfill the minimum Outfield requirement (${minOF} inn). Please remove some locks.`;
         }
       }
-      
-      const minOF = 1;
-      const minIF = team?.League === 'Minors' ? 2 : 0;
-      
-      if (lockedOF + openSlots < minOF) {
-        setValidationMsg(`❌ ERROR: ${player.name} has too many locked innings to fulfill the minimum Outfield requirement (${minOF} inn). Please remove some locks.`);
-        setGenerating(false);
-        return;
-      }
-      
-      if (lockedIF + openSlots < minIF) {
-        setValidationMsg(`❌ ERROR: ${player.name} has too many locked innings to fulfill the minimum Infield requirement (${minIF} inn). Please remove some locks.`);
+      return null;
+    };
+
+    const errG1 = validateGameLocks(Array.from({ length: numInnings }, (_, idx) => idx + 1), isDoubleHeader ? "Game 1" : "the game");
+    if (errG1) {
+      setValidationMsg(errG1);
+      setGenerating(false);
+      return;
+    }
+
+    if (isDoubleHeader) {
+      const errG2 = validateGameLocks(Array.from({ length: numInningsG2 }, (_, idx) => numInnings + idx + 1), "Game 2");
+      if (errG2) {
+        setValidationMsg(errG2);
         setGenerating(false);
         return;
       }
@@ -376,7 +458,10 @@ export default function GameSetup() {
         skills: skillsMap,
         roster_map: Object.fromEntries(activePlayers.map(p => [p.id, p.name])),
         active_count: activeCount,
-        ineligible_pitchers: Object.keys(pitchWarnings)
+        ineligible_pitchers: Object.keys(pitchWarnings),
+        num_innings: numInnings,
+        is_double_header: isDoubleHeader,
+        num_innings_g2: numInningsG2
       };
       
       const response = await api.post('/api/generate_rotation', payload);
@@ -395,6 +480,10 @@ export default function GameSetup() {
       setValidationMsg('❌ ERROR: Please select an opponent.');
       return;
     }
+    if (isDoubleHeader && !opponentG2) {
+      setValidationMsg('❌ ERROR: Please select Game 2 opponent.');
+      return;
+    }
     
     try {
       await api.post('/api/games', {
@@ -407,7 +496,15 @@ export default function GameSetup() {
         activePlayers,
         locks,
         rotation,
-        is_past_entry: false
+        is_past_entry: false,
+        // Double Header properties
+        isDoubleHeader,
+        numInnings,
+        numInningsG2,
+        opponentG2,
+        isHomeG2,
+        statusG2: gameStatusG2,
+        currentInningG2
       });
       setValidationMsg('✅ Game saved successfully!');
     } catch (error) {
@@ -417,6 +514,35 @@ export default function GameSetup() {
 
 
   if (!team) return <div className="glass-panel" style={{textAlign: 'center', padding: '50px'}}>You need an Admin to assign you to a Team before setting up a game.</div>;
+
+  const visibleInnings = isDoubleHeader
+    ? (activeTab === 'game1'
+        ? Array.from({ length: numInnings }, (_, idx) => idx + 1)
+        : Array.from({ length: numInningsG2 }, (_, idx) => idx + 1))
+    : Array.from({ length: numInnings }, (_, idx) => idx + 1);
+
+  const getBackendInningStr = (displayInn: number) => {
+    if (isDoubleHeader && activeTab === 'game2') {
+      return (numInnings + displayInn).toString();
+    }
+    return displayInn.toString();
+  };
+
+  const playerSits = activePlayers.filter(p => p.isActive).map(p => {
+    const stats = getPlayerStats(p.id);
+    const sitsTotal = stats.g1.benchCount + (isDoubleHeader ? stats.g2.benchCount : 0);
+    return { id: p.id, name: p.name, sitsTotal, isSub: p.id.startsWith("sub_") };
+  });
+
+  const hasZeroSitsPlayer = playerSits.some(p => p.sitsTotal === 0 && !p.isSub);
+  const sitsViolationPlayers = new Set<string>();
+  if (isDoubleHeader && hasZeroSitsPlayer) {
+    playerSits.forEach(p => {
+      if (p.sitsTotal >= 2 && !p.isSub) {
+        sitsViolationPlayers.add(p.id);
+      }
+    });
+  }
 
   const positions = team.League === 'Minors' 
     ? (activeCount < 10 
@@ -432,98 +558,159 @@ export default function GameSetup() {
     <>
       {/* Printable Dugout Chart */}
       <div className="print-only" style={{ padding: '0.5in' }}>
-        <div style={{ marginBottom: '12px' }}>
-          <h1 style={{ margin: 0, color: 'black', fontSize: '20px' }}>MBLL {team.League} Dugout Chart - {gameDate} | {matchTitle}</h1>
-        </div>
-        <div style={{ display: 'flex', gap: '24px' }}>
-          <div style={{ flex: '0 0 auto', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-            <div>
-              <h2 style={{ borderBottom: '2px solid black', paddingBottom: '4px', color: 'black', margin: '0 0 8px 0', fontSize: '16px' }}>Batting Order</h2>
-              <ol style={{ fontSize: '14px', lineHeight: '1.4', margin: 0, paddingLeft: '24px', color: 'black', whiteSpace: 'nowrap' }}>
-                {activePlayers.filter(p => p.isActive).map((p) => (
-                  <li key={p.id}>{p.name}</li>
-                ))}
-              </ol>
+        {/* Game 1 Printable Chart */}
+        <div style={{ pageBreakAfter: isDoubleHeader ? 'always' : 'auto' }}>
+          <div style={{ marginBottom: '12px' }}>
+            <h1 style={{ margin: 0, color: 'black', fontSize: '20px' }}>
+              MBLL {team.League} Dugout Chart - {gameDate} | {isDoubleHeader ? `Game 1: ${matchTitle}` : matchTitle}
+            </h1>
+          </div>
+          <div style={{ display: 'flex', gap: '24px' }}>
+            <div style={{ flex: '0 0 auto', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+              <div>
+                <h2 style={{ borderBottom: '2px solid black', paddingBottom: '4px', color: 'black', margin: '0 0 8px 0', fontSize: '16px' }}>Batting Order</h2>
+                <ol style={{ fontSize: '14px', lineHeight: '1.4', margin: 0, paddingLeft: '24px', color: 'black', whiteSpace: 'nowrap' }}>
+                  {activePlayers.filter(p => p.isActive).map((p) => (
+                    <li key={p.id}>{p.name}</li>
+                  ))}
+                </ol>
+              </div>
+              <div style={{ marginTop: '16px' }}>
+                <img src="/StreamSplitterLogo.png" alt="StreamSplitter" style={{width: '120px', height: 'auto'}} />
+              </div>
             </div>
-            <div style={{ marginTop: '16px' }}>
-              <img src="/StreamSplitterLogo.png" alt="StreamSplitter" style={{width: '120px', height: 'auto'}} />
+            <div style={{ flex: 1 }}>
+              <h2 style={{ borderBottom: '2px solid black', paddingBottom: '4px', color: 'black', margin: '0 0 8px 0', fontSize: '16px' }}>Defensive Rotation</h2>
+              <table className="print-table" style={{ width: '100%', borderCollapse: 'collapse', color: 'black', fontSize: '12px' }}>
+                <thead>
+                  <tr>
+                    <th style={{ border: '1px solid black', padding: '4px', textAlign: 'left' }}>Player</th>
+                    {Array.from({ length: numInnings }, (_, idx) => idx + 1).map(i => (
+                      <th key={i} style={{ border: '1px solid black', padding: '4px', textAlign: 'center' }}>{i}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {activePlayers.filter(p => p.isActive).map(p => {
+                    const row = rotation.find(r => r.id === p.id) || {};
+                    return (
+                      <tr key={p.id}>
+                        <td style={{ border: '1px solid black', padding: '4px', textAlign: 'left' }}><strong>{p.name}</strong></td>
+                        {Array.from({ length: numInnings }, (_, idx) => idx + 1).map(i => (
+                          <td key={i} style={{ border: '1px solid black', padding: '4px', textAlign: 'center' }}>
+                            {locks[p.id]?.[i] || row[i.toString()] || '-'}
+                          </td>
+                        ))}
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+
+              {/* Minors Dugout Tracker */}
+              {team?.League === 'Minors' && (
+                <div style={{ marginTop: '24px' }}>
+                  <h2 style={{ borderBottom: '2px solid black', paddingBottom: '4px', color: 'black', margin: '0 0 8px 0', fontSize: '16px' }}>Dugout Tracker (Minors)</h2>
+                  <table className="print-table" style={{ width: '100%', borderCollapse: 'collapse', color: 'black', fontSize: '12px' }}>
+                    <thead>
+                      <tr>
+                        <th style={{ border: '1px solid black', padding: '4px', textAlign: 'left', width: '20%' }}>Metric</th>
+                        {[1, 2, 3, 4, 5].map(i => (
+                          <th key={i} style={{ border: '1px solid black', padding: '4px', textAlign: 'center' }}>{i}</th>
+                        ))}
+                        <th style={{ border: '1px solid black', padding: '4px', textAlign: 'center' }}>Last</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td style={{ border: '1px solid black', padding: '4px', textAlign: 'left', fontWeight: 'bold' }}>Runs (Max 5)</td>
+                        {[1, 2, 3, 4, 5].map(i => (
+                          <td key={i} style={{ border: '1px solid black', padding: '4px', textAlign: 'center', fontSize: '14px', letterSpacing: '4px' }}>
+                            □ □ □ □ □
+                          </td>
+                        ))}
+                        <td style={{ border: '1px solid black', padding: '4px', textAlign: 'center' }}></td>
+                      </tr>
+                      <tr>
+                        <td style={{ border: '1px solid black', padding: '4px', textAlign: 'left', fontWeight: 'bold' }}>Walks (Max 5)</td>
+                        {[1, 2, 3, 4, 5].map(i => (
+                          <td key={i} style={{ border: '1px solid black', padding: '4px', textAlign: 'center', fontSize: '14px', letterSpacing: '4px' }}>
+                            □ □ □ □ □
+                          </td>
+                        ))}
+                        <td style={{ border: '1px solid black', padding: '4px', textAlign: 'center' }}></td>
+                      </tr>
+                      <tr>
+                        <td style={{ border: '1px solid black', padding: '4px', textAlign: 'left', fontWeight: 'bold' }}>Steals (Max 5, 1 Home)</td>
+                        {[1, 2, 3, 4, 5, 'Last'].map(i => (
+                          <td key={i} style={{ border: '1px solid black', padding: '4px', textAlign: 'center', fontSize: '14px', letterSpacing: '2px', whiteSpace: 'nowrap' }}>
+                            □ □ □ □ <span style={{fontSize: '11px'}}>□H</span>
+                          </td>
+                        ))}
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           </div>
-          <div style={{ flex: 1 }}>
-            <h2 style={{ borderBottom: '2px solid black', paddingBottom: '4px', color: 'black', margin: '0 0 8px 0', fontSize: '16px' }}>Defensive Rotation</h2>
-            <table className="print-table" style={{ width: '100%', borderCollapse: 'collapse', color: 'black', fontSize: '12px' }}>
-              <thead>
-                <tr>
-                  <th style={{ border: '1px solid black', padding: '4px', textAlign: 'left' }}>Player</th>
-                  {[1,2,3,4,5,6].map(i => <th key={i} style={{ border: '1px solid black', padding: '4px', textAlign: 'center' }}>{i}</th>)}
-                </tr>
-              </thead>
-              <tbody>
-                {activePlayers.filter(p => p.isActive).map(p => {
-                  const row = rotation.find(r => r.id === p.id) || {};
-                  return (
-                    <tr key={p.id}>
-                      <td style={{ border: '1px solid black', padding: '4px', textAlign: 'left' }}><strong>{p.name}</strong></td>
-                      {[1,2,3,4,5,6].map(i => (
-                        <td key={i} style={{ border: '1px solid black', padding: '4px', textAlign: 'center' }}>
-                          {locks[p.id]?.[i] || row[i.toString()] || '-'}
-                        </td>
-                      ))}
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+        </div>
 
-            {/* Minors Dugout Tracker */}
-            {team?.League === 'Minors' && (
-              <div style={{ marginTop: '24px' }}>
-                <h2 style={{ borderBottom: '2px solid black', paddingBottom: '4px', color: 'black', margin: '0 0 8px 0', fontSize: '16px' }}>Dugout Tracker (Minors)</h2>
+        {/* Game 2 Printable Chart (Only if double-header) */}
+        {isDoubleHeader && (
+          <div style={{ pageBreakBefore: 'always', paddingTop: '0.5in' }}>
+            <div style={{ marginBottom: '12px' }}>
+              <h1 style={{ margin: 0, color: 'black', fontSize: '20px' }}>
+                MBLL {team.League} Dugout Chart - {gameDate} | Game 2: {isHomeG2 ? `${allTeams.find(t => t.id === opponentG2)?.Team_Name || 'TBD'} @ ${team.Team_Name}` : `${team.Team_Name} @ ${allTeams.find(t => t.id === opponentG2)?.Team_Name || 'TBD'}`}
+              </h1>
+            </div>
+            <div style={{ display: 'flex', gap: '24px' }}>
+              <div style={{ flex: '0 0 auto', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                <div>
+                  <h2 style={{ borderBottom: '2px solid black', paddingBottom: '4px', color: 'black', margin: '0 0 8px 0', fontSize: '16px' }}>Batting Order</h2>
+                  <ol style={{ fontSize: '14px', lineHeight: '1.4', margin: 0, paddingLeft: '24px', color: 'black', whiteSpace: 'nowrap' }}>
+                    {activePlayers.filter(p => p.isActive).map((p) => (
+                      <li key={p.id}>{p.name}</li>
+                    ))}
+                  </ol>
+                </div>
+                <div style={{ marginTop: '16px' }}>
+                  <img src="/StreamSplitterLogo.png" alt="StreamSplitter" style={{width: '120px', height: 'auto'}} />
+                </div>
+              </div>
+              <div style={{ flex: 1 }}>
+                <h2 style={{ borderBottom: '2px solid black', paddingBottom: '4px', color: 'black', margin: '0 0 8px 0', fontSize: '16px' }}>Defensive Rotation (Game 2)</h2>
                 <table className="print-table" style={{ width: '100%', borderCollapse: 'collapse', color: 'black', fontSize: '12px' }}>
                   <thead>
                     <tr>
-                      <th style={{ border: '1px solid black', padding: '4px', textAlign: 'left', width: '20%' }}>Metric</th>
-                      {[1, 2, 3, 4, 5].map(i => (
+                      <th style={{ border: '1px solid black', padding: '4px', textAlign: 'left' }}>Player</th>
+                      {Array.from({ length: numInningsG2 }, (_, idx) => idx + 1).map(i => (
                         <th key={i} style={{ border: '1px solid black', padding: '4px', textAlign: 'center' }}>{i}</th>
                       ))}
-                      <th style={{ border: '1px solid black', padding: '4px', textAlign: 'center' }}>Last</th>
                     </tr>
                   </thead>
                   <tbody>
-                    <tr>
-                      <td style={{ border: '1px solid black', padding: '4px', textAlign: 'left', fontWeight: 'bold' }}>Runs (Max 5)</td>
-                      {[1, 2, 3, 4, 5].map(i => (
-                        <td key={i} style={{ border: '1px solid black', padding: '4px', textAlign: 'center', fontSize: '14px', letterSpacing: '4px' }}>
-                          □ □ □ □ □
-                        </td>
-                      ))}
-                      <td style={{ border: '1px solid black', padding: '4px', textAlign: 'center' }}></td>
-                    </tr>
-                    <tr>
-                      <td style={{ border: '1px solid black', padding: '4px', textAlign: 'left', fontWeight: 'bold' }}>Walks (Max 5)</td>
-                      {[1, 2, 3, 4, 5].map(i => (
-                        <td key={i} style={{ border: '1px solid black', padding: '4px', textAlign: 'center', fontSize: '14px', letterSpacing: '4px' }}>
-                          □ □ □ □ □
-                        </td>
-                      ))}
-                      <td style={{ border: '1px solid black', padding: '4px', textAlign: 'center' }}></td>
-                    </tr>
-                    <tr>
-                      <td style={{ border: '1px solid black', padding: '4px', textAlign: 'left', fontWeight: 'bold' }}>Steals (Max 5, 1 Home)</td>
-                      {[1, 2, 3, 4, 5, 'Last'].map(i => (
-                        <td key={i} style={{ border: '1px solid black', padding: '4px', textAlign: 'center', fontSize: '14px', letterSpacing: '2px', whiteSpace: 'nowrap' }}>
-                          □ □ □ □ <span style={{fontSize: '11px'}}>□H</span>
-                        </td>
-                      ))}
-                    </tr>
+                    {activePlayers.filter(p => p.isActive).map(p => {
+                      const row = rotation.find(r => r.id === p.id) || {};
+                      return (
+                        <tr key={p.id}>
+                          <td style={{ border: '1px solid black', padding: '4px', textAlign: 'left' }}><strong>{p.name}</strong></td>
+                          {Array.from({ length: numInningsG2 }, (_, idx) => idx + 1).map(i => (
+                            <td key={i} style={{ border: '1px solid black', padding: '4px', textAlign: 'center' }}>
+                              {locks[p.id]?.[(numInnings + i).toString()] || row[(numInnings + i).toString()] || '-'}
+                            </td>
+                          ))}
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>
-            )}
+            </div>
           </div>
-        </div>
-        
-        {/* Validation Chart for Print (Page 2) */}
+        )}
+
+        {/* Validation Chart for Print */}
         <div className="validation-print-section" style={{ pageBreakBefore: 'always', paddingTop: '0.5in' }}>
           <div style={{ marginBottom: '12px' }}>
             <h1 style={{ margin: 0, color: 'black', fontSize: '20px' }}>MBLL {team.League} Validation - {gameDate} | {matchTitle}</h1>
@@ -531,72 +718,185 @@ export default function GameSetup() {
           <h2 style={{ borderBottom: '2px solid black', paddingBottom: '4px', color: 'black', margin: '0 0 8px 0', fontSize: '16px' }}>Inning Requirements Validation</h2>
           <table className="print-table" style={{ width: '100%', borderCollapse: 'collapse', color: 'black', fontSize: '11px' }}>
             <thead>
-              <tr>
-                <th style={{ border: '1px solid black', padding: '2px 4px', textAlign: 'left' }}>Player</th>
-                <th style={{ border: '1px solid black', padding: '2px 4px', textAlign: 'center' }}>IF Innings</th>
-                <th style={{ border: '1px solid black', padding: '2px 4px', textAlign: 'center' }}>OF Innings</th>
-                <th style={{ border: '1px solid black', padding: '2px 4px', textAlign: 'center' }}>Bench</th>
-                <th style={{ border: '1px solid black', padding: '2px 4px', textAlign: 'center' }}>Valid</th>
-              </tr>
+              {isDoubleHeader ? (
+                <tr>
+                  <th style={{ border: '1px solid black', padding: '2px 4px', textAlign: 'left' }}>Player</th>
+                  <th style={{ border: '1px solid black', padding: '2px 4px', textAlign: 'center' }}>G1 IF</th>
+                  <th style={{ border: '1px solid black', padding: '2px 4px', textAlign: 'center' }}>G1 OF</th>
+                  <th style={{ border: '1px solid black', padding: '2px 4px', textAlign: 'center' }}>G2 IF</th>
+                  <th style={{ border: '1px solid black', padding: '2px 4px', textAlign: 'center' }}>G2 OF</th>
+                  <th style={{ border: '1px solid black', padding: '2px 4px', textAlign: 'center' }}>Total Sits</th>
+                  <th style={{ border: '1px solid black', padding: '2px 4px', textAlign: 'center' }}>Valid</th>
+                </tr>
+              ) : (
+                <tr>
+                  <th style={{ border: '1px solid black', padding: '2px 4px', textAlign: 'left' }}>Player</th>
+                  <th style={{ border: '1px solid black', padding: '2px 4px', textAlign: 'center' }}>IF Innings</th>
+                  <th style={{ border: '1px solid black', padding: '2px 4px', textAlign: 'center' }}>OF Innings</th>
+                  <th style={{ border: '1px solid black', padding: '2px 4px', textAlign: 'center' }}>Bench</th>
+                  <th style={{ border: '1px solid black', padding: '2px 4px', textAlign: 'center' }}>Valid</th>
+                </tr>
+              )}
             </thead>
             <tbody>
               {activePlayers.filter(p => p.isActive).map(p => {
                 const stats = getPlayerStats(p.id);
-                const isValid = stats.meetsIF && stats.meetsOF;
-                return (
-                  <tr key={`print-val-${p.id}`}>
-                    <td style={{ border: '1px solid black', padding: '2px 4px', textAlign: 'left' }}>{p.name}</td>
-                    <td style={{ border: '1px solid black', padding: '2px 4px', textAlign: 'center', backgroundColor: stats.meetsIF ? 'transparent' : '#fca5a5' }}>
-                      {stats.ifCount} {stats.minIF > 0 ? `(Min ${stats.minIF})` : ''}
-                    </td>
-                    <td style={{ border: '1px solid black', padding: '2px 4px', textAlign: 'center', backgroundColor: stats.meetsOF ? 'transparent' : '#fca5a5' }}>
-                      {stats.ofCount} (Min {stats.minOF})
-                    </td>
-                    <td style={{ border: '1px solid black', padding: '2px 4px', textAlign: 'center' }}>{stats.benchCount}</td>
-                    <td style={{ border: '1px solid black', padding: '2px 4px', textAlign: 'center' }}>{isValid ? '✅' : '❌'}</td>
-                  </tr>
-                )
+                if (isDoubleHeader) {
+                  const sitsTotal = stats.g1.benchCount + stats.g2.benchCount;
+                  const sitsViol = sitsViolationPlayers.has(p.id);
+                  const isValid = stats.meetsOFG1 && stats.meetsOFG2 && !sitsViol;
+                  return (
+                    <tr key={`print-val-${p.id}`}>
+                      <td style={{ border: '1px solid black', padding: '2px 4px', textAlign: 'left' }}>{p.name}</td>
+                      <td style={{ border: '1px solid black', padding: '2px 4px', textAlign: 'center', backgroundColor: stats.g1.ifCount >= 3 ? 'transparent' : '#fef08a' }}>
+                        {stats.g1.ifCount} / 3
+                      </td>
+                      <td style={{ border: '1px solid black', padding: '2px 4px', textAlign: 'center', backgroundColor: stats.meetsOFG1 ? 'transparent' : '#fca5a5' }}>
+                        {stats.g1.ofCount}
+                      </td>
+                      <td style={{ border: '1px solid black', padding: '2px 4px', textAlign: 'center', backgroundColor: stats.g2.ifCount >= 3 ? 'transparent' : '#fef08a' }}>
+                        {stats.g2.ifCount} / 3
+                      </td>
+                      <td style={{ border: '1px solid black', padding: '2px 4px', textAlign: 'center', backgroundColor: stats.meetsOFG2 ? 'transparent' : '#fca5a5' }}>
+                        {stats.g2.ofCount}
+                      </td>
+                      <td style={{ border: '1px solid black', padding: '2px 4px', textAlign: 'center', backgroundColor: sitsViol ? '#fca5a5' : 'transparent' }}>
+                        {sitsTotal}
+                      </td>
+                      <td style={{ border: '1px solid black', padding: '2px 4px', textAlign: 'center' }}>{isValid ? '✅' : '❌'}</td>
+                    </tr>
+                  );
+                } else {
+                  const minIF = team?.League === 'Minors' ? 2 : 0;
+                  const isValid = stats.meetsIFG1 && stats.meetsOFG1;
+                  return (
+                    <tr key={`print-val-${p.id}`}>
+                      <td style={{ border: '1px solid black', padding: '2px 4px', textAlign: 'left' }}>{p.name}</td>
+                      <td style={{ border: '1px solid black', padding: '2px 4px', textAlign: 'center', backgroundColor: stats.meetsIFG1 ? 'transparent' : '#fca5a5' }}>
+                        {stats.g1.ifCount} {minIF > 0 ? `(Min ${minIF})` : ''}
+                      </td>
+                      <td style={{ border: '1px solid black', padding: '2px 4px', textAlign: 'center', backgroundColor: stats.meetsOFG1 ? 'transparent' : '#fca5a5' }}>
+                        {stats.g1.ofCount} (Min 1)
+                      </td>
+                      <td style={{ border: '1px solid black', padding: '2px 4px', textAlign: 'center' }}>{stats.g1.benchCount}</td>
+                      <td style={{ border: '1px solid black', padding: '2px 4px', textAlign: 'center' }}>{isValid ? '✅' : '❌'}</td>
+                    </tr>
+                  );
+                }
               })}
             </tbody>
           </table>
         </div>
-            
       </div>
 
       <div className="no-print" style={{display: 'flex', flexDirection: 'column', gap: '24px'}}>
       
 
-      {/* Matchup Header */}
-      <div className="glass-panel" style={{display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap'}}>
-        <h3 style={{margin: 0, marginRight: 'auto'}}>Game Matchup{opponent ? `: ${matchTitle}` : ''}</h3>
-        <div style={{display: 'flex', flexDirection: 'column', gap: '2px'}}>
-          <input type="date" className="input-field" style={{width: 'auto'}} value={gameDate} onChange={e => setGameDate(e.target.value)} />
-          <span style={{fontSize: '10px', color: 'var(--text-secondary)', fontStyle: 'italic'}}>Manasquan Time</span>
-        </div>
-        <select className="select-field" style={{width: 'auto'}} value={isHome ? 'home' : 'away'} onChange={e => setIsHome(e.target.value === 'home')}>
-          <option value="home">Home</option>
-          <option value="away">Away</option>
-        </select>
-        <select className="select-field" style={{width: 'auto'}} value={opponent} onChange={e => setOpponent(e.target.value)}>
-          <option value="">Select Opponent</option>
-          {opponentTeams.map(t => <option key={t.id} value={t.id}>{t.Team_Name}</option>)}
-        </select>
-        <select className="select-field" style={{width: 'auto', border: gameStatus === 'Active' ? '1px solid var(--accent)' : ''}} value={gameStatus} onChange={e => setGameStatus(e.target.value as any)}>
-          <option value="Planned">Planned</option>
-          <option value="Active">Active</option>
-          <option value="Completed">Completed</option>
-          <option value="Postponed">Postponed</option>
-          <option value="Cancelled">Cancelled</option>
-        </select>
-        {gameStatus === 'Active' && (
-          <div style={{display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(59, 130, 246, 0.1)', padding: '4px 12px', borderRadius: '8px', border: '1px solid var(--accent)'}}>
-            <span style={{fontSize: '14px', color: 'var(--accent)', fontWeight: 'bold'}}>Entering Inning:</span>
-            <select className="select-field" style={{width: 'auto', padding: '4px 8px'}} value={currentInning} onChange={e => setCurrentInning(parseInt(e.target.value))}>
-              {[1,2,3,4,5,6].map(i => <option key={i} value={i}>{i}</option>)}
+      {/* Game Settings & Matchup */}
+      <div className="glass-panel" style={{display: 'flex', flexDirection: 'column', gap: '16px'}}>
+        <div style={{display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap'}}>
+          <h3 style={{margin: 0, marginRight: 'auto'}}>Game Settings</h3>
+          
+          <label style={{display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: '500'}}>
+            <input 
+              type="checkbox" 
+              checked={isDoubleHeader} 
+              onChange={e => handleToggleDoubleHeader(e.target.checked)} 
+              style={{accentColor: 'var(--accent)'}}
+            />
+            Double-Header
+          </label>
+          
+          <div style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
+            <span style={{fontSize: '14px', color: 'var(--text-secondary)'}}>Game 1 Innings:</span>
+            <select 
+              className="select-field" 
+              style={{width: 'auto', padding: '4px 8px'}} 
+              value={numInnings} 
+              onChange={e => setNumInnings(parseInt(e.target.value))}
+            >
+              {[3,4,5,6].map(i => <option key={i} value={i}>{i} Innings</option>)}
             </select>
           </div>
+          
+          <div style={{display: 'flex', flexDirection: 'column', gap: '2px'}}>
+            <input type="date" className="input-field" style={{width: 'auto'}} value={gameDate} onChange={e => setGameDate(e.target.value)} />
+            <span style={{fontSize: '10px', color: 'var(--text-secondary)', fontStyle: 'italic'}}>Manasquan Time</span>
+          </div>
+
+          <button className="btn" onClick={saveGame} disabled={rotation.length === 0}>Save Game Setup</button>
+        </div>
+
+        <div style={{borderTop: '1px solid var(--border-color)', paddingTop: '16px', display: 'flex', gap: '16px', flexDirection: 'column'}}>
+          <h4 style={{margin: 0, color: 'var(--accent)'}}>Game 1 Matchup: {opponent ? `${matchTitle} (${numInnings} inn)` : 'Not Configured'}</h4>
+          <div style={{display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap'}}>
+            <select className="select-field" style={{width: 'auto'}} value={isHome ? 'home' : 'away'} onChange={e => setIsHome(e.target.value === 'home')}>
+              <option value="home">Home</option>
+              <option value="away">Away</option>
+            </select>
+            <select className="select-field" style={{width: 'auto'}} value={opponent} onChange={e => setOpponent(e.target.value)}>
+              <option value="">Select Opponent</option>
+              {opponentTeams.map(t => <option key={t.id} value={t.id}>{t.Team_Name}</option>)}
+            </select>
+            <select className="select-field" style={{width: 'auto', border: gameStatus === 'Active' ? '1px solid var(--accent)' : ''}} value={gameStatus} onChange={e => setGameStatus(e.target.value as any)}>
+              <option value="Planned">Planned</option>
+              <option value="Active">Active</option>
+              <option value="Completed">Completed</option>
+              <option value="Postponed">Postponed</option>
+              <option value="Cancelled">Cancelled</option>
+            </select>
+            {gameStatus === 'Active' && (
+              <div style={{display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(59, 130, 246, 0.1)', padding: '4px 12px', borderRadius: '8px', border: '1px solid var(--accent)'}}>
+                <span style={{fontSize: '14px', color: 'var(--accent)', fontWeight: 'bold'}}>Entering Inning:</span>
+                <select className="select-field" style={{width: 'auto', padding: '4px 8px'}} value={currentInning} onChange={e => setCurrentInning(parseInt(e.target.value))}>
+                  {Array.from({ length: numInnings }, (_, idx) => idx + 1).map(i => <option key={i} value={i}>{i}</option>)}
+                </select>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {isDoubleHeader && (
+          <div style={{borderTop: '1px solid var(--border-color)', paddingTop: '16px', display: 'flex', gap: '16px', flexDirection: 'column'}}>
+            <h4 style={{margin: 0, color: 'var(--accent)'}}>Game 2 Matchup: {opponentG2 ? `${isHomeG2 ? `${opponentTeams.find(t => t.id === opponentG2)?.Team_Name || 'TBD'} @ ${team.Team_Name}` : `${team.Team_Name} @ ${opponentTeams.find(t => t.id === opponentG2)?.Team_Name || 'TBD'}`} (${numInningsG2} inn)` : 'Not Configured'}</h4>
+            <div style={{display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap'}}>
+              <select className="select-field" style={{width: 'auto'}} value={isHomeG2 ? 'home' : 'away'} onChange={e => setIsHomeG2(e.target.value === 'home')}>
+                <option value="home">Home</option>
+                <option value="away">Away</option>
+              </select>
+              <select className="select-field" style={{width: 'auto'}} value={opponentG2} onChange={e => setOpponentG2(e.target.value)}>
+                <option value="">Select Opponent</option>
+                {opponentTeams.map(t => <option key={t.id} value={t.id}>{t.Team_Name}</option>)}
+              </select>
+              <select className="select-field" style={{width: 'auto', border: gameStatusG2 === 'Active' ? '1px solid var(--accent)' : ''}} value={gameStatusG2} onChange={e => setGameStatusG2(e.target.value as any)}>
+                <option value="Planned">Planned</option>
+                <option value="Active">Active</option>
+                <option value="Completed">Completed</option>
+                <option value="Postponed">Postponed</option>
+                <option value="Cancelled">Cancelled</option>
+              </select>
+              <div style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
+                <span style={{fontSize: '14px', color: 'var(--text-secondary)'}}>Game 2 Innings:</span>
+                <select 
+                  className="select-field" 
+                  style={{width: 'auto', padding: '4px 8px'}} 
+                  value={numInningsG2} 
+                  onChange={e => setNumInningsG2(parseInt(e.target.value))}
+                >
+                  {[3,4,5,6].map(i => <option key={i} value={i}>{i} Innings</option>)}
+                </select>
+              </div>
+              {gameStatusG2 === 'Active' && (
+                <div style={{display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(59, 130, 246, 0.1)', padding: '4px 12px', borderRadius: '8px', border: '1px solid var(--accent)'}}>
+                  <span style={{fontSize: '14px', color: 'var(--accent)', fontWeight: 'bold'}}>Entering Inning:</span>
+                  <select className="select-field" style={{width: 'auto', padding: '4px 8px'}} value={currentInningG2} onChange={e => setCurrentInningG2(parseInt(e.target.value))}>
+                    {Array.from({ length: numInningsG2 }, (_, idx) => idx + 1).map(i => <option key={i} value={i}>{i}</option>)}
+                  </select>
+                </div>
+              )}
+            </div>
+          </div>
         )}
-        <button className="btn" onClick={saveGame} disabled={rotation.length === 0}>Save Game</button>
       </div>
 
       <div className="grid-layout">
@@ -688,20 +988,53 @@ export default function GameSetup() {
         <div className="glass-panel">
           <h2>Defensive Rotation & Locks</h2>
           <p style={{color: 'var(--text-secondary)', fontSize: '14px', marginBottom: '16px', lineHeight: '1.5'}}>
-            ⚠️ <strong>Required:</strong> You must explicitly lock your Pitchers (P) and Catchers (C) for all 6 innings. 
+            ⚠️ <strong>Required:</strong> You must explicitly lock your Pitchers (P) and Catchers (C) for all active innings. 
             The generator will not automatically assign these unique positions.
           </p>
+
+          {isDoubleHeader && (
+            <div style={{display: 'flex', gap: '8px', marginBottom: '16px'}}>
+              <button 
+                className="btn" 
+                style={{
+                  background: activeTab === 'game1' ? 'var(--accent)' : 'var(--panel-bg)',
+                  color: 'white',
+                  border: activeTab === 'game1' ? 'none' : '1px solid var(--border-color)',
+                  padding: '6px 16px',
+                  borderRadius: '20px'
+                }}
+                onClick={() => setActiveTab('game1')}
+              >
+                Game 1 Rotation
+              </button>
+              <button 
+                className="btn" 
+                style={{
+                  background: activeTab === 'game2' ? 'var(--accent)' : 'var(--panel-bg)',
+                  color: 'white',
+                  border: activeTab === 'game2' ? 'none' : '1px solid var(--border-color)',
+                  padding: '6px 16px',
+                  borderRadius: '20px'
+                }}
+                onClick={() => setActiveTab('game2')}
+              >
+                Game 2 Rotation
+              </button>
+            </div>
+          )}
+
           <div className="table-container">
             <table>
               <thead>
                 <tr>
                   <th>Player</th>
-                  {[1,2,3,4,5,6].map(i => {
+                  {visibleInnings.map(i => {
+                    const backendInnStr = getBackendInningStr(i);
                     let hasP = false;
                     let hasC = false;
                     Object.values(locks).forEach(playerLocks => {
-                      if (playerLocks[i] === 'P') hasP = true;
-                      if (playerLocks[i] === 'C') hasC = true;
+                      if (playerLocks[backendInnStr] === 'P') hasP = true;
+                      if (playerLocks[backendInnStr] === 'C') hasC = true;
                     });
                     const isMissingBattery = !(hasP && hasC);
                     return <th key={i} style={{textAlign: 'center', color: isMissingBattery ? '#ef4444' : 'var(--text-secondary)'}}>{i}</th>
@@ -722,11 +1055,14 @@ export default function GameSetup() {
                           </div>
                         </div>
                       </td>
-                      {[1,2,3,4,5,6].map(i => {
-                        const currentVal = locks[p.id]?.[i] || row[i.toString()] || '';
-                        const isAlgo = !locks[p.id]?.[i] && !!row[i.toString()];
+                      {visibleInnings.map(i => {
+                        const backendInnStr = getBackendInningStr(i);
+                        const currentVal = locks[p.id]?.[backendInnStr] || row[backendInnStr] || '';
+                        const isAlgo = !locks[p.id]?.[backendInnStr] && !!row[backendInnStr];
                         const isHighIF = ['1B', '2B', '3B', 'SS'].includes(currentVal) && (p.skillInfield >= 4);
                         const shouldGlow = isAlgo && isHighIF;
+                        const currentStatus = isDoubleHeader && activeTab === 'game2' ? gameStatusG2 : gameStatus;
+                        const currentInnVal = isDoubleHeader && activeTab === 'game2' ? currentInningG2 : currentInning;
                         
                         return (
                         <td key={i} align="center">
@@ -736,19 +1072,19 @@ export default function GameSetup() {
                               width: '70px', 
                               padding: '4px', 
                               fontSize: '12px',
-                              border: locks[p.id]?.[i] ? '1px solid var(--accent)' : (shouldGlow ? '1px solid rgba(251, 191, 36, 0.8)' : '1px solid var(--border-color)'),
-                              background: locks[p.id]?.[i] ? 'rgba(59, 130, 246, 0.2)' : 'transparent',
+                              border: locks[p.id]?.[backendInnStr] ? '1px solid var(--accent)' : (shouldGlow ? '1px solid rgba(251, 191, 36, 0.8)' : '1px solid var(--border-color)'),
+                              background: locks[p.id]?.[backendInnStr] ? 'rgba(59, 130, 246, 0.2)' : 'transparent',
                               boxShadow: shouldGlow ? '0 0 10px rgba(251, 191, 36, 0.3), inset 0 0 4px rgba(251, 191, 36, 0.2)' : 'none'
                             }}
                             value={currentVal}
-                            onChange={(e) => updateLock(p.id, i.toString(), e.target.value)}
+                            onChange={(e) => updateLock(p.id, backendInnStr, e.target.value)}
                           >
                             <option value="">--</option>
                             {positions.map(pos => (
                               <option 
                                 key={pos} 
                                 value={pos} 
-                                disabled={(pos === 'P' && !!pitchWarnings[p.id]) || (gameStatus === 'Active' && i < currentInning)}
+                                disabled={(pos === 'P' && !!pitchWarnings[p.id]) || (currentStatus === 'Active' && parseInt(backendInnStr) < currentInnVal)}
                               >
                                 {pos}
                               </option>
@@ -771,31 +1107,71 @@ export default function GameSetup() {
               <div className="table-container">
                 <table style={{ width: '100%', fontSize: '13px' }}>
                   <thead>
-                    <tr>
-                      <th style={{ textAlign: 'left' }}>Player</th>
-                      <th style={{ textAlign: 'center' }}>IF Innings</th>
-                      <th style={{ textAlign: 'center' }}>OF Innings</th>
-                      <th style={{ textAlign: 'center' }}>Bench</th>
-                      <th style={{ textAlign: 'center' }}>Status</th>
-                    </tr>
+                    {isDoubleHeader ? (
+                      <tr>
+                        <th style={{ textAlign: 'left' }}>Player</th>
+                        <th style={{ textAlign: 'center' }}>G1 IF (Target 3)</th>
+                        <th style={{ textAlign: 'center' }}>G1 OF (Min 1)</th>
+                        <th style={{ textAlign: 'center' }}>G2 IF (Target 3)</th>
+                        <th style={{ textAlign: 'center' }}>G2 OF (Min 1)</th>
+                        <th style={{ textAlign: 'center' }}>Total Sits</th>
+                        <th style={{ textAlign: 'center' }}>Status</th>
+                      </tr>
+                    ) : (
+                      <tr>
+                        <th style={{ textAlign: 'left' }}>Player</th>
+                        <th style={{ textAlign: 'center' }}>IF Innings</th>
+                        <th style={{ textAlign: 'center' }}>OF Innings</th>
+                        <th style={{ textAlign: 'center' }}>Bench</th>
+                        <th style={{ textAlign: 'center' }}>Status</th>
+                      </tr>
+                    )}
                   </thead>
                   <tbody>
                     {activePlayers.filter(p => p.isActive).map(p => {
                       const stats = getPlayerStats(p.id);
-                      const isValid = stats.meetsIF && stats.meetsOF;
-                      return (
-                        <tr key={`val-${p.id}`}>
-                          <td style={{ textAlign: 'left', fontWeight: '500' }}>{p.name}</td>
-                          <td style={{ textAlign: 'center', color: stats.meetsIF ? 'var(--text-primary)' : '#ef4444' }}>
-                            {stats.ifCount} {stats.minIF > 0 ? <span style={{fontSize: '11px', color: 'var(--text-secondary)'}}>(Min {stats.minIF})</span> : ''}
-                          </td>
-                          <td style={{ textAlign: 'center', color: stats.meetsOF ? 'var(--text-primary)' : '#ef4444' }}>
-                            {stats.ofCount} <span style={{fontSize: '11px', color: 'var(--text-secondary)'}}>(Min {stats.minOF})</span>
-                          </td>
-                          <td style={{ textAlign: 'center' }}>{stats.benchCount}</td>
-                          <td style={{ textAlign: 'center' }}>{isValid ? '✅' : '❌'}</td>
-                        </tr>
-                      )
+                      if (isDoubleHeader) {
+                        const sitsTotal = stats.g1.benchCount + stats.g2.benchCount;
+                        const sitsViol = sitsViolationPlayers.has(p.id);
+                        const isValid = stats.meetsOFG1 && stats.meetsOFG2 && !sitsViol;
+                        return (
+                          <tr key={`val-${p.id}`}>
+                            <td style={{ textAlign: 'left', fontWeight: '500' }}>{p.name}</td>
+                            <td style={{ textAlign: 'center', color: stats.g1.ifCount >= 3 ? 'var(--text-primary)' : '#eab308' }}>
+                              {stats.g1.ifCount} / 3
+                            </td>
+                            <td style={{ textAlign: 'center', color: stats.meetsOFG1 ? 'var(--text-primary)' : '#ef4444' }}>
+                              {stats.g1.ofCount}
+                            </td>
+                            <td style={{ textAlign: 'center', color: stats.g2.ifCount >= 3 ? 'var(--text-primary)' : '#eab308' }}>
+                              {stats.g2.ifCount} / 3
+                            </td>
+                            <td style={{ textAlign: 'center', color: stats.meetsOFG2 ? 'var(--text-primary)' : '#ef4444' }}>
+                              {stats.g2.ofCount}
+                            </td>
+                            <td style={{ textAlign: 'center', color: sitsViol ? '#ef4444' : 'var(--text-primary)' }}>
+                              {sitsTotal} {sitsViol && <span style={{fontSize: '10px', color: '#ef4444'}}>(Sat 2+ times while roster player has 0 sits)</span>}
+                            </td>
+                            <td style={{ textAlign: 'center' }}>{isValid ? '✅' : '❌'}</td>
+                          </tr>
+                        );
+                      } else {
+                        const minIF = team?.League === 'Minors' ? 2 : 0;
+                        const isValid = stats.meetsIFG1 && stats.meetsOFG1;
+                        return (
+                          <tr key={`val-${p.id}`}>
+                            <td style={{ textAlign: 'left', fontWeight: '500' }}>{p.name}</td>
+                            <td style={{ textAlign: 'center', color: stats.meetsIFG1 ? 'var(--text-primary)' : '#ef4444' }}>
+                              {stats.g1.ifCount} {minIF > 0 ? <span style={{fontSize: '11px', color: 'var(--text-secondary)'}}>(Min {minIF})</span> : ''}
+                            </td>
+                            <td style={{ textAlign: 'center', color: stats.meetsOFG1 ? 'var(--text-primary)' : '#ef4444' }}>
+                              {stats.g1.ofCount} <span style={{fontSize: '11px', color: 'var(--text-secondary)'}}>(Min 1)</span>
+                            </td>
+                            <td style={{ textAlign: 'center' }}>{stats.g1.benchCount}</td>
+                            <td style={{ textAlign: 'center' }}>{isValid ? '✅' : '❌'}</td>
+                          </tr>
+                        );
+                      }
                     })}
                   </tbody>
                 </table>
