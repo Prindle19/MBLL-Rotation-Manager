@@ -776,6 +776,52 @@ export default function GameSetup() {
                     })}
                   </tbody>
                 </table>
+
+                {/* Minors Dugout Tracker */}
+                {team?.League === 'Minors' && (
+                  <div style={{ marginTop: '24px' }}>
+                    <h2 style={{ borderBottom: '2px solid black', paddingBottom: '4px', color: 'black', margin: '0 0 8px 0', fontSize: '16px' }}>Dugout Tracker (Minors)</h2>
+                    <table className="print-table" style={{ width: '100%', borderCollapse: 'collapse', color: 'black', fontSize: '12px' }}>
+                      <thead>
+                        <tr>
+                          <th style={{ border: '1px solid black', padding: '4px', textAlign: 'left', width: '20%' }}>Metric</th>
+                          {[1, 2, 3, 4, 5].map(i => (
+                            <th key={i} style={{ border: '1px solid black', padding: '4px', textAlign: 'center' }}>{i}</th>
+                          ))}
+                          <th style={{ border: '1px solid black', padding: '4px', textAlign: 'center' }}>Last</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td style={{ border: '1px solid black', padding: '4px', textAlign: 'left', fontWeight: 'bold' }}>Runs (Max 5)</td>
+                          {[1, 2, 3, 4, 5].map(i => (
+                            <td key={i} style={{ border: '1px solid black', padding: '4px', textAlign: 'center', fontSize: '14px', letterSpacing: '4px' }}>
+                              □ □ □ □ □
+                            </td>
+                          ))}
+                          <td style={{ border: '1px solid black', padding: '4px', textAlign: 'center' }}></td>
+                        </tr>
+                        <tr>
+                          <td style={{ border: '1px solid black', padding: '4px', textAlign: 'left', fontWeight: 'bold' }}>Walks (Max 5)</td>
+                          {[1, 2, 3, 4, 5].map(i => (
+                            <td key={i} style={{ border: '1px solid black', padding: '4px', textAlign: 'center', fontSize: '14px', letterSpacing: '4px' }}>
+                              □ □ □ □ □
+                            </td>
+                          ))}
+                          <td style={{ border: '1px solid black', padding: '4px', textAlign: 'center' }}></td>
+                        </tr>
+                        <tr>
+                          <td style={{ border: '1px solid black', padding: '4px', textAlign: 'left', fontWeight: 'bold' }}>Steals (Max 5, 1 Home)</td>
+                          {[1, 2, 3, 4, 5, 'Last'].map(i => (
+                            <td key={i} style={{ border: '1px solid black', padding: '4px', textAlign: 'center', fontSize: '14px', letterSpacing: '2px', whiteSpace: 'nowrap' }}>
+                              □ □ □ □ <span style={{fontSize: '11px'}}>□H</span>
+                            </td>
+                          ))}
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             </div>
           </div>
