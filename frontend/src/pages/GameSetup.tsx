@@ -250,6 +250,43 @@ export default function GameSetup() {
     setActivePlayers(activePlayers.map(p => p.id === id ? { ...p, isActive: !p.isActive } : p));
   };
 
+  const toggleAttendance = (playerId: string, gameNum: 1 | 2) => {
+    setActivePlayers(prev => prev.map(p => {
+      if (p.id !== playerId) return p;
+      return gameNum === 1 
+        ? { ...p, absentG1: !p.absentG1 } 
+        : { ...p, absentG2: !p.absentG2 };
+    }));
+
+    // Clear locks for the game they are now absent for
+    setLocks(prev => {
+      const pLocks = { ...(prev[playerId] || {}) };
+      const startInn = gameNum === 1 ? 1 : numInnings + 1;
+      const endInn = gameNum === 1 ? numInnings : numInnings + numInningsG2;
+      for (let i = startInn; i <= endInn; i++) {
+        delete pLocks[i.toString()];
+      }
+      return { ...prev, [playerId]: pLocks };
+    });
+  };
+
+  const getPositionsForInning = (backendInnStr: string) => {
+    if (team?.League !== 'Minors') {
+      return ['P', 'C', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF', 'Bench'];
+    }
+    const innVal = parseInt(backendInnStr);
+    const isG2 = isDoubleHeader && innVal > numInnings;
+    const presentCount = activePlayers.filter(p => {
+      if (!p.isActive) return false;
+      if (isG2) return !p.absentG2;
+      return !p.absentG1;
+    }).length;
+
+    return presentCount < 10 
+      ? ['P', 'C', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF', 'Bench'] 
+      : ['P', 'C', '1B', '2B', '3B', 'SS', 'LF', 'LC', 'RC', 'RF', 'Bench'];
+  };
+
   const addTemporarySub = () => {
     if (!subName.trim()) return;
     const sub = {
@@ -318,10 +355,11 @@ export default function GameSetup() {
     const minOF = 1;
     const minIF = isDoubleHeader ? 3 : (team?.League === 'Minors' ? 2 : 0);
 
-    const meetsIFG1 = g1.ifCount >= minIF;
-    const meetsOFG1 = g1.ofCount >= minOF;
-    const meetsIFG2 = !isDoubleHeader || g2.ifCount >= minIF;
-    const meetsOFG2 = !isDoubleHeader || g2.ofCount >= minOF;
+    const player = activePlayers.find(ap => ap.id === playerId) || {};
+    const meetsIFG1 = player.absentG1 || g1.ifCount >= minIF;
+    const meetsOFG1 = player.absentG1 || g1.ofCount >= minOF;
+    const meetsIFG2 = !isDoubleHeader || player.absentG2 || g2.ifCount >= minIF;
+    const meetsOFG2 = !isDoubleHeader || player.absentG2 || g2.ofCount >= minOF;
     
     return { 
       g1, 
@@ -372,6 +410,26 @@ export default function GameSetup() {
       }
     }
 
+    // Inject Programmatic Absent locks
+    activePlayers.forEach(p => {
+      if (!p.isActive) return;
+      if (isDoubleHeader) {
+        if (p.absentG1) {
+          for (let i = 1; i <= numInnings; i++) {
+            if (!effectiveLocks[p.id]) effectiveLocks[p.id] = {};
+            effectiveLocks[p.id][i.toString()] = 'Absent';
+          }
+        }
+        if (p.absentG2) {
+          for (let i = 1; i <= numInningsG2; i++) {
+            const innStr = (numInnings + i).toString();
+            if (!effectiveLocks[p.id]) effectiveLocks[p.id] = {};
+            effectiveLocks[p.id][innStr] = 'Absent';
+          }
+        }
+      }
+    });
+
     const totalInns = isDoubleHeader ? (numInnings + numInningsG2) : numInnings;
 
     // Check if Pitcher and Catcher are locked for all active innings
@@ -403,6 +461,8 @@ export default function GameSetup() {
     const validateGameLocks = (gInns: number[], gameName: string) => {
       for (const player of activePlayers) {
         if (!player.isActive || player.id.startsWith("sub_")) continue;
+        if (gameName === "Game 1" && player.absentG1) continue;
+        if (gameName === "Game 2" && player.absentG2) continue;
         
         let lockedOF = 0;
         let openSlots = gInns.length;
@@ -542,21 +602,24 @@ export default function GameSetup() {
     return { id: p.id, name: p.name, sitsTotal, isSub: p.id.startsWith("sub_") };
   });
 
-  const hasZeroSitsPlayer = playerSits.some(p => p.sitsTotal === 0 && !p.isSub);
+  const hasZeroSitsPlayer = playerSits.some(p => {
+    const playerObj = activePlayers.find(ap => ap.id === p.id);
+    const isAbsentAny = playerObj?.absentG1 || playerObj?.absentG2;
+    return p.sitsTotal === 0 && !p.isSub && !isAbsentAny;
+  });
+  
   const sitsViolationPlayers = new Set<string>();
   if (isDoubleHeader && hasZeroSitsPlayer) {
     playerSits.forEach(p => {
-      if (p.sitsTotal >= 2 && !p.isSub) {
+      const playerObj = activePlayers.find(ap => ap.id === p.id);
+      const isAbsentAny = playerObj?.absentG1 || playerObj?.absentG2;
+      if (p.sitsTotal >= 2 && !p.isSub && !isAbsentAny) {
         sitsViolationPlayers.add(p.id);
       }
     });
   }
 
-  const positions = team.League === 'Minors' 
-    ? (activeCount < 10 
-        ? ['P', 'C', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF', 'Bench'] 
-        : ['P', 'C', '1B', '2B', '3B', 'SS', 'LF', 'LC', 'RC', 'RF', 'Bench'])
-    : ['P', 'C', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF', 'Bench'];
+
 
   const opponentTeams = allTeams.filter(t => t.League === team.League && t.id !== team.id);
   const opponentName = opponentTeams.find(t => t.id === opponent)?.Team_Name || 'TBD';
@@ -939,8 +1002,39 @@ export default function GameSetup() {
                           <div style={{flex: 1, display: 'flex', flexDirection: 'column'}}>
                             <div style={{display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap'}}>
                               <span style={{textDecoration: player.isActive ? 'none' : 'line-through', fontWeight: '500'}}>{index + 1}. {player.name}</span>
-
                             </div>
+                            {isDoubleHeader && player.isActive && (
+                              <div style={{display: 'flex', gap: '8px', marginTop: '6px'}}>
+                                <button 
+                                  className="btn" 
+                                  style={{
+                                    padding: '2px 8px', 
+                                    fontSize: '11px', 
+                                    background: player.absentG1 ? 'rgba(239, 68, 68, 0.1)' : 'rgba(59, 130, 246, 0.2)',
+                                    color: player.absentG1 ? '#ef4444' : 'var(--accent)',
+                                    border: `1px solid ${player.absentG1 ? 'rgba(239, 68, 68, 0.2)' : 'var(--accent)'}`,
+                                    borderRadius: '4px'
+                                  }}
+                                  onClick={() => toggleAttendance(player.id, 1)}
+                                >
+                                  G1: {player.absentG1 ? 'Absent' : 'Present'}
+                                </button>
+                                <button 
+                                  className="btn" 
+                                  style={{
+                                    padding: '2px 8px', 
+                                    fontSize: '11px', 
+                                    background: player.absentG2 ? 'rgba(239, 68, 68, 0.1)' : 'rgba(139, 92, 246, 0.2)',
+                                    color: player.absentG2 ? '#ef4444' : '#8b5cf6',
+                                    border: `1px solid ${player.absentG2 ? 'rgba(239, 68, 68, 0.2)' : '#8b5cf6'}`,
+                                    borderRadius: '4px'
+                                  }}
+                                  onClick={() => toggleAttendance(player.id, 2)}
+                                >
+                                  G2: {player.absentG2 ? 'Absent' : 'Present'}
+                                </button>
+                              </div>
+                            )}
                             {pitchWarnings[player.id] && player.isActive && (
                               <span style={{fontSize: '11px', color: '#ef4444', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px'}}>
                                 <AlertCircle size={12}/> {pitchWarnings[player.id]}
@@ -1059,15 +1153,25 @@ export default function GameSetup() {
                         </div>
                       </td>
                       {inningColumns.map((col, idx) => {
+                        const isPlayerAbsentForCol = col.gameIndex === 2 ? p.absentG2 : p.absentG1;
+                        const borderLeft = isDoubleHeader && col.gameIndex === 2 && col.displayInning === 1 
+                          ? '2px solid var(--border-color)' 
+                          : '';
+
+                        if (isPlayerAbsentForCol) {
+                          return (
+                            <td key={idx} align="center" style={{ borderLeft }}>
+                              <span style={{ color: 'var(--text-secondary)', fontStyle: 'italic', fontSize: '12px' }}>Absent</span>
+                            </td>
+                          );
+                        }
+
                         const currentVal = locks[p.id]?.[col.backendInningStr] || row[col.backendInningStr] || '';
                         const isAlgo = !locks[p.id]?.[col.backendInningStr] && !!row[col.backendInningStr];
                         const isHighIF = ['1B', '2B', '3B', 'SS'].includes(currentVal) && (p.skillInfield >= 4);
                         const shouldGlow = isAlgo && isHighIF;
                         const currentStatus = col.gameIndex === 2 ? gameStatusG2 : gameStatus;
                         const currentInnVal = col.gameIndex === 2 ? currentInningG2 : currentInning;
-                        const borderLeft = isDoubleHeader && col.gameIndex === 2 && col.displayInning === 1 
-                          ? '2px solid var(--border-color)' 
-                          : '';
 
                         return (
                           <td key={idx} align="center" style={{ borderLeft }}>
@@ -1085,7 +1189,7 @@ export default function GameSetup() {
                               onChange={(e) => updateLock(p.id, col.backendInningStr, e.target.value)}
                             >
                               <option value="">--</option>
-                              {positions.map(pos => (
+                              {getPositionsForInning(col.backendInningStr).map(pos => (
                                 <option 
                                   key={pos} 
                                   value={pos} 

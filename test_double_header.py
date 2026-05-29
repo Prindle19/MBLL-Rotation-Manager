@@ -82,6 +82,57 @@ def test_double_header_rules():
             
     print("SUCCESS: Double Header Sits Rule Test Passed!")
 
+def test_double_header_with_absence():
+    print("\n--- Testing Double Header Rules with Player Absence ---")
+    active_players = [f"p{i}" for i in range(1, 12)] # 11 active players
+    league = "Minors"
+    
+    # Lock p1 to be Absent for all Game 1 innings (1-4)
+    locks = {
+        "p1": {"1": "Absent", "2": "Absent", "3": "Absent", "4": "Absent", "5": "P", "6": "C"},
+        "p2": {"3": "P", "4": "C", "7": "P", "8": "C"},
+        "p3": {"1": "C", "2": "P", "5": "C", "6": "P"},
+        "p4": {"3": "C", "4": "P", "7": "C", "8": "P"},
+    }
+    skills = {p: {"IF": 3, "OF": 3} for p in active_players}
+    
+    grid = solve_rotation(
+        active_players=active_players,
+        league=league,
+        locks=locks,
+        skills=skills,
+        active_count=11,
+        num_innings=4,
+        is_double_header=True,
+        num_innings_g2=4
+    )
+    
+    print(grid)
+    # Check that p1 is locked to Absent in innings 1-4
+    for i in range(1, 5):
+        assert grid.at["p1", i] == "Absent", f"p1 was not Absent in inning {i}"
+        
+    # Check that p1 played in Game 2 (innings 5-8)
+    p1_game2_positions = [grid.at["p1", i] for i in range(5, 9)]
+    print("p1 Game 2 positions:", p1_game2_positions)
+    assert "Absent" not in p1_game2_positions
+    
+    # Check sits constraints
+    sits = {}
+    for p in active_players:
+        sits[p] = sum(1 for i in range(1, 9) if grid.at[p, i] == "Bench")
+        
+    print("Sits per player:", sits)
+    
+    present_players = [p for p in active_players if p != "p1"]
+    any_present_zero_sits = any(sits[p] == 0 for p in present_players)
+    if any_present_zero_sits:
+        for p in present_players:
+            assert sits[p] < 2, f"Player {p} sat twice ({sits[p]} times) while another present player had 0 sits!"
+            
+    print("SUCCESS: Double Header with Absence Test Passed!")
+
 if __name__ == "__main__":
     test_dynamic_innings_single_game()
     test_double_header_rules()
+    test_double_header_with_absence()

@@ -14,17 +14,8 @@ def solve_rotation(active_players, league, locks, skills, pitcher_name=None, pro
         
     innings = list(range(1, total_innings + 1))
     
-    if league == "Minors":
-        if_pos = ['P', 'C', '1B', '2B', '3B', 'SS'] 
-        if active_count < 10:
-            of_pos = ['LF', 'CF', 'RF']
-        else:
-            of_pos = ['LF', 'LC', 'RC', 'RF']
-    else:
-        if_pos = ['P', 'C', '1B', '2B', '3B', 'SS']
-        of_pos = ['LF', 'CF', 'RF']
-        
-    all_pos = if_pos + of_pos
+    if_pos = ['P', 'C', '1B', '2B', '3B', 'SS']
+    of_pos = ['LF', 'LC', 'RC', 'RF', 'CF']
     
     grid = pd.DataFrame(index=active_players, columns=innings)
     
@@ -38,7 +29,25 @@ def solve_rotation(active_players, league, locks, skills, pitcher_name=None, pro
                     grid.at[p_id, inn] = pos
 
     for inn in innings:
-        available_slots = all_pos.copy()
+        # Determine the positions for this specific inning based on the number of present players
+        present_count = 0
+        for p in active_players:
+            p_locks = locks.get(p, {}) if locks else {}
+            if p_locks.get(str(inn)) != "Absent":
+                present_count += 1
+
+        if league == "Minors":
+            if_pos_inn = ['P', 'C', '1B', '2B', '3B', 'SS']
+            if present_count < 10:
+                of_pos_inn = ['LF', 'CF', 'RF']
+            else:
+                of_pos_inn = ['LF', 'LC', 'RC', 'RF']
+        else:
+            if_pos_inn = ['P', 'C', '1B', '2B', '3B', 'SS']
+            of_pos_inn = ['LF', 'CF', 'RF']
+            
+        all_pos_inn = if_pos_inn + of_pos_inn
+        available_slots = all_pos_inn.copy()
         
         # Determine which game the current inning belongs to and the corresponding innings list
         if is_double_header:
@@ -114,9 +123,21 @@ def solve_rotation(active_players, league, locks, skills, pitcher_name=None, pro
             future_locked_benches = sum(1 for i in range(inn, total_innings + 1) if grid.at[p, i] == "Bench")
             guaranteed_benches = benches_realized + future_locked_benches
             
-            total_bench_slots_day = max(0, (active_count * total_innings) - (len(all_pos) * total_innings))
-            max_benches = (total_bench_slots_day + active_count - 1) // active_count if active_count > 0 else 0
-            min_benches = total_bench_slots_day // active_count if active_count > 0 else 0
+            # Count bench slots for the games they are present in
+            game_bench_slots = 0
+            game_present_players = 0
+            g_inns_present = [i for i in innings if (locks.get(p, {}) if locks else {}).get(str(i)) != "Absent"]
+            for i in g_inns_present:
+                pres_cnt = sum(1 for pl in active_players if (locks.get(pl, {}) if locks else {}).get(str(i)) != "Absent")
+                if league == "Minors":
+                    n_pos = 10 if pres_cnt >= 10 else 9
+                else:
+                    n_pos = 9
+                game_bench_slots += max(0, pres_cnt - n_pos)
+                game_present_players = max(game_present_players, pres_cnt)
+            
+            max_benches = (game_bench_slots + game_present_players - 1) // game_present_players if game_present_players > 0 else 0
+            min_benches = game_bench_slots // game_present_players if game_present_players > 0 else 0
             
             total_bench_score = guaranteed_benches * 50000
             if guaranteed_benches >= max_benches and max_benches > 0:
@@ -141,7 +162,12 @@ def solve_rotation(active_players, league, locks, skills, pitcher_name=None, pro
                     b_fut = sum(1 for i in range(inn, total_innings + 1) if grid.at[pl, i] == "Bench")
                     committed_sits[pl] = b_real + b_fut
                 
-                any_zero_sits = any(committed_sits[pl] == 0 for pl in active_players if not str(pl).startswith("sub_"))
+                any_zero_sits = any(
+                    committed_sits[pl] == 0 
+                    for pl in active_players 
+                    if not str(pl).startswith("sub_") 
+                    and not any(grid.at[pl, i] == "Absent" for i in innings)
+                )
                 if any_zero_sits and committed_sits[p] >= 1:
                     # Player already sat, but someone has sat 0 times, so force this player to play
                     urgency += 10000000
