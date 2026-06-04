@@ -57,6 +57,7 @@ export default function GameSetup() {
   // Rotation state
   const [locks, setLocks] = useState<Record<string, Record<string, string>>>({});
   const [rotation, setRotation] = useState<any[]>([]);
+  const [originalRotation, setOriginalRotation] = useState<any[]>([]);
   const [generating, setGenerating] = useState(false);
   const [validationMsg, setValidationMsg] = useState('');
   
@@ -159,6 +160,7 @@ export default function GameSetup() {
       setActivePlayers(game.activePlayers || []);
       setLocks(game.locks || {});
       setRotation(game.rotation || []);
+      setOriginalRotation(game.originalRotation || game.rotation || []);
       setValidationMsg(`✅ Loaded game from ${game.date}`);
 
       // Double-header and dynamic innings states
@@ -223,11 +225,156 @@ export default function GameSetup() {
 
   const prevActiveRef = useRef(activePlayers);
   useEffect(() => {
-    if (rotation.length > 0 && prevActiveRef.current !== activePlayers) {
-      generateRotation();
+    if (rotation.length > 0) {
+      const prev = prevActiveRef.current;
+      const idsChanged = prev.length !== activePlayers.length || prev.some((p, idx) => p.id !== activePlayers[idx].id);
+      const activeChanged = prev.some((p, idx) => p.isActive !== activePlayers[idx]?.isActive);
+      const absentChanged = prev.some((p, idx) => p.absentG1 !== activePlayers[idx]?.absentG1 || p.absentG2 !== activePlayers[idx]?.absentG2);
+      
+      if (idsChanged || activeChanged || absentChanged) {
+        generateRotation();
+      }
     }
     prevActiveRef.current = activePlayers;
   }, [activePlayers]);
+
+  const recomputeRotationWithFlakes = (baseRotation: any[], currentPlayers: any[]) => {
+    if (!baseRotation || baseRotation.length === 0) return [];
+    
+    const newRotation = JSON.parse(JSON.stringify(baseRotation));
+    const g1Flakes = currentPlayers.filter(p => p.isActive && p.flakeG1);
+    const g2Flakes = isDoubleHeader ? currentPlayers.filter(p => p.isActive && p.flakeG2) : [];
+    
+    const applyFlakesForGame = (flakes: any[], startInn: number, endInn: number, gameNum: 1 | 2) => {
+      flakes.forEach(flakePlayer => {
+        const flakeRow = newRotation.find((r: any) => r.id === flakePlayer.id);
+        if (!flakeRow) return;
+
+        for (let inn = startInn; inn <= endInn; inn++) {
+          const innStr = inn.toString();
+          const flakePos = flakeRow[innStr];
+
+          if (flakePos && flakePos !== 'Bench' && flakePos !== 'Absent' && flakePos !== 'Flake') {
+            const benchedCandidates = currentPlayers.filter(p => {
+              if (!p.isActive) return false;
+              if (p.id === flakePlayer.id) return false;
+              
+              const isAbsent = gameNum === 2 ? p.absentG2 : p.absentG1;
+              const isFlake = gameNum === 2 ? p.flakeG2 : p.flakeG1;
+              if (isAbsent || isFlake) return false;
+
+              const pRow = newRotation.find((r: any) => r.id === p.id);
+              return pRow && pRow[innStr] === 'Bench';
+            });
+
+            if (benchedCandidates.length > 0) {
+              const candidateScores = benchedCandidates.map(c => {
+                const cRow = newRotation.find((r: any) => r.id === c.id);
+                let ifCount = 0;
+                let ofCount = 0;
+                
+                const gameInns = Array.from({ length: endInn - startInn + 1 }, (_, idx) => startInn + idx);
+                for (const i of gameInns) {
+                  const pos = cRow ? cRow[i.toString()] : 'Bench';
+                  if (['P', 'C', '1B', '2B', '3B', 'SS'].includes(pos)) ifCount++;
+                  else if (['LF', 'LC', 'RC', 'RF', 'CF'].includes(pos)) ofCount++;
+                }
+
+                let totalDayBench = 0;
+                const totalInns = isDoubleHeader ? (numInnings + numInningsG2) : numInnings;
+                for (let i = 1; i <= totalInns; i++) {
+                  const pRowLocal = newRotation.find((r: any) => r.id === c.id);
+                  if (!pRowLocal || pRowLocal[i.toString()] === 'Bench') {
+                    totalDayBench++;
+                  }
+                }
+
+                let score = totalDayBench * 100;
+                const minOF = 1;
+                const minIF = isDoubleHeader ? 3 : (team?.League === 'Minors' ? 2 : 0);
+
+                const isOFPos = ['LF', 'LC', 'RC', 'RF', 'CF'].includes(flakePos);
+                const isIFPos = ['P', 'C', '1B', '2B', '3B', 'SS'].includes(flakePos);
+
+                if (isOFPos && ofCount < minOF && !c.id.startsWith("sub_")) {
+                  score += 1000;
+                }
+                if (isIFPos && ifCount < minIF && !c.id.startsWith("sub_")) {
+                  score += 1000;
+                }
+
+                if (isIFPos) {
+                  score += (c.skillInfield || 3) * 10;
+                  const premiumIF = ['SS', '1B', '3B'].includes(flakePos);
+                  if (premiumIF && (c.skillInfield || 3) >= 4) score += 50;
+                  if (flakePos === '2B' && (c.skillInfield || 3) <= 2) score += 50;
+                } else if (isOFPos) {
+                  score += (c.skillOutfield || 3) * 10;
+                  const premiumOF = ['CF', 'LC', 'LF'].includes(flakePos);
+                  if (premiumOF && (c.skillOutfield || 3) >= 4) score += 50;
+                  if (['RF', 'RC'].includes(flakePos) && (c.skillOutfield || 3) <= 2) score += 50;
+                }
+
+                return { candidate: c, score };
+              });
+
+              candidateScores.sort((a, b) => b.score - a.score);
+              const bestCandidate = candidateScores[0].candidate;
+
+              const bestRow = newRotation.find((r: any) => r.id === bestCandidate.id);
+              if (bestRow) {
+                bestRow[innStr] = flakePos;
+              }
+              flakeRow[innStr] = 'Bench';
+            } else {
+              flakeRow[innStr] = 'Bench';
+            }
+          }
+        }
+      });
+    };
+
+    applyFlakesForGame(g1Flakes, 1, numInnings, 1);
+    if (isDoubleHeader) {
+      applyFlakesForGame(g2Flakes, numInnings + 1, numInnings + numInningsG2, 2);
+    }
+    
+    return newRotation;
+  };
+
+  const toggleFlake = (playerId: string, gameNum: 1 | 2) => {
+    setActivePlayers(prev => {
+      const updatedPlayers = prev.map(p => {
+        if (p.id !== playerId) return p;
+        const isCurrentlyFlake = gameNum === 1 ? !!p.flakeG1 : !!p.flakeG2;
+        return gameNum === 1 
+          ? { ...p, flakeG1: !isCurrentlyFlake } 
+          : { ...p, flakeG2: !isCurrentlyFlake };
+      });
+      
+      const targetPlayer = updatedPlayers.find(p => p.id === playerId);
+      const isMarkingFlake = targetPlayer ? (gameNum === 1 ? !!targetPlayer.flakeG1 : !!targetPlayer.flakeG2) : false;
+      
+      if (isMarkingFlake) {
+        setLocks(prevLocks => {
+          const newLocks = { ...prevLocks };
+          const pLocks = { ...(newLocks[playerId] || {}) };
+          const startInn = gameNum === 1 ? 1 : numInnings + 1;
+          const endInn = gameNum === 1 ? numInnings : numInnings + numInningsG2;
+          for (let inn = startInn; inn <= endInn; inn++) {
+            delete pLocks[inn.toString()];
+          }
+          newLocks[playerId] = pLocks;
+          return newLocks;
+        });
+      }
+      
+      const newRot = recomputeRotationWithFlakes(originalRotation, updatedPlayers);
+      setRotation(newRot);
+      
+      return updatedPlayers;
+    });
+  };
 
   const onDragStart = () => {
     if (window.innerWidth <= 768) {
@@ -311,7 +458,13 @@ export default function GameSetup() {
       }
       return { ...prev, [playerId]: pLocks };
     });
-    setRotation(prev => prev.map(r => r.id === playerId ? {...r, [inn]: pos} : r));
+    
+    setOriginalRotation(prevOriginal => {
+      const updatedOriginal = prevOriginal.map(r => r.id === playerId ? {...r, [inn]: pos} : r);
+      const updatedActive = recomputeRotationWithFlakes(updatedOriginal, activePlayers);
+      setRotation(updatedActive);
+      return updatedOriginal;
+    });
   };
 
   const activeCount = activePlayers.filter(p => p.isActive).length;
@@ -356,10 +509,10 @@ export default function GameSetup() {
     const minIF = isDoubleHeader ? 3 : (team?.League === 'Minors' ? 2 : 0);
 
     const player = activePlayers.find(ap => ap.id === playerId) || {};
-    const meetsIFG1 = player.absentG1 || g1.ifCount >= minIF;
-    const meetsOFG1 = player.absentG1 || g1.ofCount >= minOF;
-    const meetsIFG2 = !isDoubleHeader || player.absentG2 || g2.ifCount >= minIF;
-    const meetsOFG2 = !isDoubleHeader || player.absentG2 || g2.ofCount >= minOF;
+    const meetsIFG1 = player.absentG1 || player.flakeG1 || g1.ifCount >= minIF;
+    const meetsOFG1 = player.absentG1 || player.flakeG1 || g1.ofCount >= minOF;
+    const meetsIFG2 = !isDoubleHeader || player.absentG2 || player.flakeG2 || g2.ifCount >= minIF;
+    const meetsOFG2 = !isDoubleHeader || player.absentG2 || player.flakeG2 || g2.ofCount >= minOF;
     
     return { 
       g1, 
@@ -414,17 +567,24 @@ export default function GameSetup() {
     activePlayers.forEach(p => {
       if (!p.isActive) return;
       if (isDoubleHeader) {
-        if (p.absentG1) {
+        if (p.absentG1 || p.flakeG1) {
           for (let i = 1; i <= numInnings; i++) {
             if (!effectiveLocks[p.id]) effectiveLocks[p.id] = {};
             effectiveLocks[p.id][i.toString()] = 'Absent';
           }
         }
-        if (p.absentG2) {
+        if (p.absentG2 || p.flakeG2) {
           for (let i = 1; i <= numInningsG2; i++) {
             const innStr = (numInnings + i).toString();
             if (!effectiveLocks[p.id]) effectiveLocks[p.id] = {};
             effectiveLocks[p.id][innStr] = 'Absent';
+          }
+        }
+      } else {
+        if (p.absentG1 || p.flakeG1) {
+          for (let i = 1; i <= numInnings; i++) {
+            if (!effectiveLocks[p.id]) effectiveLocks[p.id] = {};
+            effectiveLocks[p.id][i.toString()] = 'Absent';
           }
         }
       }
@@ -523,6 +683,7 @@ export default function GameSetup() {
       
       const response = await api.post('/api/generate_rotation', payload);
       setRotation(response.data.rotation);
+      setOriginalRotation(response.data.rotation);
       setValidationMsg('✅ Rotation generated successfully.');
     } catch (error: any) {
       console.error("Failed to generate rotation", error);
@@ -553,6 +714,7 @@ export default function GameSetup() {
         activePlayers,
         locks,
         rotation,
+        originalRotation,
         is_past_entry: false,
         // Double Header properties
         isDoubleHeader,
@@ -604,7 +766,7 @@ export default function GameSetup() {
 
   const hasZeroSitsPlayer = playerSits.some(p => {
     const playerObj = activePlayers.find(ap => ap.id === p.id);
-    const isAbsentAny = playerObj?.absentG1 || playerObj?.absentG2;
+    const isAbsentAny = playerObj?.absentG1 || playerObj?.absentG2 || playerObj?.flakeG1 || playerObj?.flakeG2;
     return p.sitsTotal === 0 && !p.isSub && !isAbsentAny;
   });
   
@@ -612,7 +774,7 @@ export default function GameSetup() {
   if (isDoubleHeader && hasZeroSitsPlayer) {
     playerSits.forEach(p => {
       const playerObj = activePlayers.find(ap => ap.id === p.id);
-      const isAbsentAny = playerObj?.absentG1 || playerObj?.absentG2;
+      const isAbsentAny = playerObj?.absentG1 || playerObj?.absentG2 || playerObj?.flakeG1 || playerObj?.flakeG2;
       if (p.sitsTotal >= 2 && !p.isSub && !isAbsentAny) {
         sitsViolationPlayers.add(p.id);
       }
@@ -669,7 +831,7 @@ export default function GameSetup() {
                         <td style={{ border: '1px solid black', padding: '4px', textAlign: 'left' }}><strong>{p.name}</strong></td>
                         {Array.from({ length: numInnings }, (_, idx) => idx + 1).map(i => (
                           <td key={i} style={{ border: '1px solid black', padding: '4px', textAlign: 'center' }}>
-                            {locks[p.id]?.[i] || row[i.toString()] || '-'}
+                            {p.flakeG1 ? 'Absent' : (locks[p.id]?.[i] || row[i.toString()] || '-')}
                           </td>
                         ))}
                       </tr>
@@ -768,7 +930,7 @@ export default function GameSetup() {
                           <td style={{ border: '1px solid black', padding: '4px', textAlign: 'left' }}><strong>{p.name}</strong></td>
                           {Array.from({ length: numInningsG2 }, (_, idx) => idx + 1).map(i => (
                             <td key={i} style={{ border: '1px solid black', padding: '4px', textAlign: 'center' }}>
-                              {locks[p.id]?.[(numInnings + i).toString()] || row[(numInnings + i).toString()] || '-'}
+                              {p.flakeG2 ? 'Absent' : (locks[p.id]?.[(numInnings + i).toString()] || row[(numInnings + i).toString()] || '-')}
                             </td>
                           ))}
                         </tr>
@@ -1050,34 +1212,88 @@ export default function GameSetup() {
                               <span style={{textDecoration: player.isActive ? 'none' : 'line-through', fontWeight: '500'}}>{index + 1}. {player.name}</span>
                             </div>
                             {isDoubleHeader && player.isActive && (
+                              <div style={{display: 'flex', gap: '8px', marginTop: '6px', flexWrap: 'wrap'}}>
+                                <div style={{display: 'flex', gap: '4px'}}>
+                                  <button 
+                                    className="btn" 
+                                    style={{
+                                      padding: '2px 8px', 
+                                      fontSize: '11px', 
+                                      background: player.absentG1 ? 'rgba(239, 68, 68, 0.1)' : 'rgba(59, 130, 246, 0.2)',
+                                      color: player.absentG1 ? '#ef4444' : 'var(--accent)',
+                                      border: `1px solid ${player.absentG1 ? 'rgba(239, 68, 68, 0.2)' : 'var(--accent)'}`,
+                                      borderRadius: '4px'
+                                    }}
+                                    onClick={() => toggleAttendance(player.id, 1)}
+                                  >
+                                    G1: {player.absentG1 ? 'Absent' : 'Present'}
+                                  </button>
+                                  {rotation.length > 0 && !player.absentG1 && (
+                                    <button 
+                                      className="btn" 
+                                      style={{
+                                        padding: '2px 8px', 
+                                        fontSize: '11px', 
+                                        background: player.flakeG1 ? 'rgba(245, 158, 11, 0.2)' : 'rgba(245, 158, 11, 0.05)',
+                                        color: '#f59e0b',
+                                        border: `1px solid ${player.flakeG1 ? '#f59e0b' : 'rgba(245, 158, 11, 0.2)'}`,
+                                        borderRadius: '4px'
+                                      }}
+                                      onClick={() => toggleFlake(player.id, 1)}
+                                    >
+                                      {player.flakeG1 ? 'G1 Flake ⚠️' : 'G1 Flake'}
+                                    </button>
+                                  )}
+                                </div>
+                                <div style={{display: 'flex', gap: '4px'}}>
+                                  <button 
+                                    className="btn" 
+                                    style={{
+                                      padding: '2px 8px', 
+                                      fontSize: '11px', 
+                                      background: player.absentG2 ? 'rgba(239, 68, 68, 0.1)' : 'rgba(139, 92, 246, 0.2)',
+                                      color: player.absentG2 ? '#ef4444' : '#8b5cf6',
+                                      border: `1px solid ${player.absentG2 ? 'rgba(239, 68, 68, 0.2)' : '#8b5cf6'}`,
+                                      borderRadius: '4px'
+                                    }}
+                                    onClick={() => toggleAttendance(player.id, 2)}
+                                  >
+                                    G2: {player.absentG2 ? 'Absent' : 'Present'}
+                                  </button>
+                                  {rotation.length > 0 && !player.absentG2 && (
+                                    <button 
+                                      className="btn" 
+                                      style={{
+                                        padding: '2px 8px', 
+                                        fontSize: '11px', 
+                                        background: player.flakeG2 ? 'rgba(245, 158, 11, 0.2)' : 'rgba(245, 158, 11, 0.05)',
+                                        color: '#f59e0b',
+                                        border: `1px solid ${player.flakeG2 ? '#f59e0b' : 'rgba(245, 158, 11, 0.2)'}`,
+                                        borderRadius: '4px'
+                                      }}
+                                      onClick={() => toggleFlake(player.id, 2)}
+                                    >
+                                      {player.flakeG2 ? 'G2 Flake ⚠️' : 'G2 Flake'}
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                            {!isDoubleHeader && player.isActive && rotation.length > 0 && (
                               <div style={{display: 'flex', gap: '8px', marginTop: '6px'}}>
                                 <button 
                                   className="btn" 
                                   style={{
                                     padding: '2px 8px', 
                                     fontSize: '11px', 
-                                    background: player.absentG1 ? 'rgba(239, 68, 68, 0.1)' : 'rgba(59, 130, 246, 0.2)',
-                                    color: player.absentG1 ? '#ef4444' : 'var(--accent)',
-                                    border: `1px solid ${player.absentG1 ? 'rgba(239, 68, 68, 0.2)' : 'var(--accent)'}`,
+                                    background: player.flakeG1 ? 'rgba(245, 158, 11, 0.2)' : 'rgba(245, 158, 11, 0.05)',
+                                    color: '#f59e0b',
+                                    border: `1px solid ${player.flakeG1 ? '#f59e0b' : 'rgba(245, 158, 11, 0.2)'}`,
                                     borderRadius: '4px'
                                   }}
-                                  onClick={() => toggleAttendance(player.id, 1)}
+                                  onClick={() => toggleFlake(player.id, 1)}
                                 >
-                                  G1: {player.absentG1 ? 'Absent' : 'Present'}
-                                </button>
-                                <button 
-                                  className="btn" 
-                                  style={{
-                                    padding: '2px 8px', 
-                                    fontSize: '11px', 
-                                    background: player.absentG2 ? 'rgba(239, 68, 68, 0.1)' : 'rgba(139, 92, 246, 0.2)',
-                                    color: player.absentG2 ? '#ef4444' : '#8b5cf6',
-                                    border: `1px solid ${player.absentG2 ? 'rgba(239, 68, 68, 0.2)' : '#8b5cf6'}`,
-                                    borderRadius: '4px'
-                                  }}
-                                  onClick={() => toggleAttendance(player.id, 2)}
-                                >
-                                  G2: {player.absentG2 ? 'Absent' : 'Present'}
+                                  {player.flakeG1 ? 'Flake ⚠️' : 'Mark as Flake'}
                                 </button>
                               </div>
                             )}
@@ -1191,7 +1407,23 @@ export default function GameSetup() {
                     <tr key={p.id}>
                       <td style={{fontSize: '14px', whiteSpace: 'nowrap'}}>
                         <div style={{display: 'flex', flexDirection: 'column', gap: '2px'}}>
-                          <strong>{p.name}</strong>
+                          <strong>
+                            {p.name}
+                            {((isDoubleHeader ? (p.flakeG1 || p.flakeG2) : p.flakeG1)) && (
+                              <span style={{
+                                marginLeft: '6px', 
+                                padding: '2px 6px', 
+                                fontSize: '10px', 
+                                background: 'rgba(245, 158, 11, 0.2)', 
+                                color: '#f59e0b', 
+                                borderRadius: '4px',
+                                border: '1px solid #f59e0b',
+                                fontWeight: 'bold'
+                              }}>
+                                Flake
+                              </span>
+                            )}
+                          </strong>
                           <div style={{display: 'flex', gap: '4px', fontSize: '9px', color: 'var(--text-secondary)'}}>
                             <span style={{display: 'flex', alignItems: 'center', gap: '1px'}}>IF <StarRating value={p.skillInfield || 3} readonly size={8} /></span>
                             <span style={{display: 'flex', alignItems: 'center', gap: '1px'}}>OF <StarRating value={p.skillOutfield || 3} readonly size={8} /></span>
@@ -1200,6 +1432,7 @@ export default function GameSetup() {
                       </td>
                       {inningColumns.map((col, idx) => {
                         const isPlayerAbsentForCol = col.gameIndex === 2 ? p.absentG2 : p.absentG1;
+                        const isPlayerFlakeForCol = col.gameIndex === 2 ? p.flakeG2 : p.flakeG1;
                         const borderLeft = isDoubleHeader && col.gameIndex === 2 && col.displayInning === 1 
                           ? '2px solid var(--border-color)' 
                           : '';
@@ -1208,6 +1441,14 @@ export default function GameSetup() {
                           return (
                             <td key={idx} align="center" style={{ borderLeft }}>
                               <span style={{ color: 'var(--text-secondary)', fontStyle: 'italic', fontSize: '12px' }}>Absent</span>
+                            </td>
+                          );
+                        }
+
+                        if (isPlayerFlakeForCol) {
+                          return (
+                            <td key={idx} align="center" style={{ borderLeft }}>
+                              <span style={{ color: '#f59e0b', fontStyle: 'italic', fontSize: '12px', fontWeight: 'bold' }}>Flake</span>
                             </td>
                           );
                         }
